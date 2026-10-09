@@ -3,7 +3,7 @@ import type { Fatura } from '@/lib/types';
 import { formatBRL } from '@/lib/format';
 
 /** A partir de quantas parcelas atrasadas o cliente é tratado como inadimplente. */
-export const PARCELAS_INADIMPLENCIA = 2;
+export const PARCELAS_INADIMPLENCIA = 1;
 
 /** Clientes com PARCELAS_INADIMPLENCIA ou mais faturas atrasadas (sobre todas as faturas, não só as filtradas). */
 export function clientesInadimplentes(faturas: Fatura[]) {
@@ -15,7 +15,7 @@ export function clientesInadimplentes(faturas: Fatura[]) {
 export function SeloInadimplente() {
   return (
     <span
-      title={`${PARCELAS_INADIMPLENCIA} ou mais parcelas em atraso. Avaliar bloqueio da moto pelo rastreador.`}
+      title="Cliente com parcela em atraso. Avaliar bloqueio da moto pelo rastreador."
       className="inline-flex items-center gap-1 rounded-md bg-destructive px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-destructive-foreground"
     >
       <ShieldAlert className="h-3 w-3" aria-hidden />

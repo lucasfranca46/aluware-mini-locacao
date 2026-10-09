@@ -208,7 +208,7 @@ Faturas atrasadas são o problema real de uma locadora, então a tela vai além 
 - **Uma única regra de cálculo.** `calcular_encargos(valor, vencimento, data)` é usada pela view (o que a tela mostra) e pela `liquidar_fatura` (o que o banco aceita). Por isso, o valor exibido e o valor aceito nunca divergem.
 - **A baixa separa parcela, multa e juros** (`multa_paga`, `juros_pago`), que também ficam imutáveis. A fatura paga com atraso mostra "R$ 400,00 + R$ 9,87 de encargos", e o card "Recebido" soma o que entrou de fato.
 - **Cobrar no WhatsApp:** botão com mensagem pronta (nome, parcela, moto, placa, vencimento, dias em atraso e valor atualizado). O link `wa.me` abre o WhatsApp para escolher o contato, então o telefone do cliente não precisa sair do banco.
-- **Selo "Inadimplente":** aparece nas faturas **atrasadas** de clientes com 2 ou mais parcelas em atraso. Faturas pagas ou a vencer do mesmo cliente não recebem o selo. A dica sugere avaliar o bloqueio da moto pelo rastreador, prática comum no setor.
+- **Selo "Inadimplente":** aparece em toda fatura **atrasada**. Faturas pagas ou a vencer do mesmo cliente não recebem o selo. O limite é configurável em `PARCELAS_INADIMPLENCIA` (`web/src/components/Atraso.tsx`), por exemplo 2 para marcar só a partir da segunda parcela em atraso. A dica sugere avaliar o bloqueio da moto pelo rastreador, prática comum no setor.
 
 ### Dados de demonstração e botão "Resetar dados de teste"
 
