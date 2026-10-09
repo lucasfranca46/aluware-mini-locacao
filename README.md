@@ -62,6 +62,8 @@ npm test
 ✔ encargos de atraso: multa 2% + juros 1% a.m. pro rata, só para faturas atrasadas
 ✔ fatura paga não gera encargos, mesmo vencida
 ✔ resetar_demo recria o cenário, inclusive faturas pagas, e limita a 1 reset a cada 30 s
+✔ fatura atrasada só é liquidada com multa + juros, gravados separadamente
+✔ fatura em dia (ou vencendo hoje) é paga sem encargos
 ✔ PAYMENT_RECEIVED com valor correto liquida (200)
 ✔ reenvio do mesmo webhook (inclusive em paralelo) responde 200 sem duplicar baixa
 ✔ valor divergente -> 422 e fatura continua pendente
@@ -74,7 +76,7 @@ npm test
 ✔ Asaas: reenvio é idempotente e PAYMENT_CONFIRMED também conta como pago
 ✔ Asaas: recusa definitiva responde 200 (sem reenvio) e não liquida
 ✔ Asaas: outros eventos são ignorados e payload sem externalReference é 400
-ℹ tests 28 · pass 28 · fail 0
+ℹ tests 30 · pass 30 · fail 0
 ```
 
 ### 3. Stack completa com Supabase
@@ -150,8 +152,8 @@ Toda a regra crítica fica em **uma função no banco**, `liquidar_fatura(fatura
 
 1. `SELECT ... FOR UPDATE` trava a linha da fatura. Se o gateway disparar o mesmo webhook duas vezes **ao mesmo tempo**, o segundo espera o primeiro commitar.
 2. Se a fatura já está `pago`, retorna `ja_processada` sem alterar nada e o endpoint responde **200** (o gateway para de reenviar).
-3. Se o valor não bate (comparação em centavos), retorna `valor_divergente` e o endpoint responde **422**. A fatura continua pendente.
-4. Caso contrário, faz `UPDATE` de status, `valor_pago`, `pago_em` e `pago_em_brt` de uma vez.
+3. Calcula o **valor devido no dia** com a mesma função usada pela tela (`calcular_encargos`): o valor da parcela se estiver em dia, ou valor + multa + juros se estiver atrasada. Se o valor recebido não bate (comparação em centavos), retorna `valor_divergente` com o `valor_esperado`, e o endpoint responde **422**. A fatura continua em aberto.
+4. Caso contrário, faz `UPDATE` de status, `valor_pago`, `multa_paga`, `juros_pago`, `pago_em` e `pago_em_brt` de uma vez. A constraint garante `valor_pago = valor + multa_paga + juros_pago`.
 
 A Edge Function só faz validação de entrada, autenticação e o mapeamento resultado → HTTP.
 
@@ -202,7 +204,9 @@ Faturas atrasadas são o problema real de uma locadora, então a tela vai além 
 
 - **Dias em atraso** em cada fatura ("há 14 dias").
 - **Encargos calculados no banco** (migration [`20261009000300_encargos_atraso.sql`](supabase/migrations/20261009000300_encargos_atraso.sql)): multa de **2%** + juros de mora de **1% ao mês** *pro rata die*. A `vw_faturas` entrega `dias_atraso`, `multa`, `juros` e `valor_atualizado`, e o card "Em atraso" mostra o total com encargos. Os valores ficam na view, como o status `atrasado`, porque mudam todo dia e assim não precisam de job.
-- **Os encargos são informativos.** O enunciado exige que o valor pago coincida com o valor da fatura, então a liquidação continua exigindo o **valor original**. Num cenário real, a cobrança Pix seria reemitida com o valor atualizado.
+- **Fatura atrasada é paga com encargos** (migration [`20261009000500_pagamento_com_encargos.sql`](supabase/migrations/20261009000500_pagamento_com_encargos.sql)). O enunciado pede que o valor recebido coincida com o valor da fatura. Aqui, "valor da fatura" é o **valor devido no dia do pagamento**: parcela em dia ou vencendo hoje paga o valor normal, e parcela atrasada paga valor + multa + juros. Pagar o valor antigo numa fatura atrasada é recusado como `valor_divergente`, como um boleto vencido.
+- **Uma única regra de cálculo.** `calcular_encargos(valor, vencimento, data)` é usada pela view (o que a tela mostra) e pela `liquidar_fatura` (o que o banco aceita). Por isso, o valor exibido e o valor aceito nunca divergem.
+- **A baixa separa parcela, multa e juros** (`multa_paga`, `juros_pago`), que também ficam imutáveis. A fatura paga com atraso mostra "R$ 400,00 + R$ 9,87 de encargos", e o card "Recebido" soma o que entrou de fato.
 - **Cobrar no WhatsApp:** botão com mensagem pronta (nome, parcela, moto, placa, vencimento, dias em atraso e valor atualizado). O link `wa.me` abre o WhatsApp para escolher o contato, então o telefone do cliente não precisa sair do banco.
 - **Selo "Inadimplente":** aparece nas faturas **atrasadas** de clientes com 2 ou mais parcelas em atraso. Faturas pagas ou a vencer do mesmo cliente não recebem o selo. A dica sugere avaliar o bloqueio da moto pelo rastreador, prática comum no setor.
 
@@ -217,6 +221,9 @@ O site é público, então quem testa vai pagando as faturas e logo não sobra n
 - **Só existe por ser demonstração.** Em produção, essa função não existiria.
 
 ### Filtros
+
+Na aba **Pagas**, as faturas aparecem do pagamento mais recente para o mais antigo.
+
 
 Campos separados para **cliente**, **placa** e **veículo** (modelo). Cliente e placa sugerem valores cadastrados, a placa ignora hífen e maiúsculas/minúsculas, e os cards de resumo acompanham os filtros.
 
@@ -239,7 +246,8 @@ Como este projeto é um **teste técnico**, deixamos esses detalhes visíveis de
 │   │   ├── 20261009000100_restringir_leitura_publica.sql # anon só lê as colunas da tela
 │   │   ├── 20261009000200_vw_faturas_modelo_placa.sql    # colunas para os filtros
 │   │   ├── 20261009000300_encargos_atraso.sql            # dias em atraso, multa, juros
-│   │   └── 20261009000400_resetar_demo.sql               # cenário de demonstração + reset
+│   │   ├── 20261009000400_resetar_demo.sql               # cenário de demonstração + reset
+│   │   └── 20261009000500_pagamento_com_encargos.sql     # atrasada paga com multa e juros
 │   ├── seed.sql                                     # chama resetar_demo(): 7 clientes, 7 motos, 32 faturas
 │   ├── config.toml
 │   └── functions/webhook-pagamento/

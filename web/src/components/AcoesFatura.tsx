@@ -29,7 +29,7 @@ export function AcoesFatura({ fatura, carregando, onSimular }: Props) {
   if (fatura.status === 'pago') {
     return (
       <button
-        onClick={() => onSimular(fatura, fatura.valor)}
+        onClick={() => onSimular(fatura, fatura.valor_pago ?? fatura.valor)}
         disabled={carregando}
         title="Reenvia o mesmo webhook para demonstrar a idempotência"
         className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-semibold text-foreground/70 transition-all hover:border-primary hover:text-primary disabled:opacity-50"
@@ -55,8 +55,10 @@ export function AcoesFatura({ fatura, carregando, onSimular }: Props) {
         </a>
       )}
       <button
-        onClick={() => onSimular(fatura, fatura.valor)}
+        // Valor devido hoje: com multa e juros se a fatura estiver atrasada.
+        onClick={() => onSimular(fatura, fatura.valor_atualizado)}
         disabled={carregando}
+        title={fatura.dias_atraso > 0 ? `Paga ${formatBRL(fatura.valor_atualizado)} (com multa e juros)` : undefined}
         className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-primary px-3 py-2 text-xs font-semibold text-primary-foreground shadow-sm transition-all hover:opacity-90 hover:shadow-md disabled:opacity-60"
       >
         {carregando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
@@ -64,7 +66,7 @@ export function AcoesFatura({ fatura, carregando, onSimular }: Props) {
       </button>
       <button
         // 90% do valor: sempre positivo e sempre diferente, qualquer que seja a fatura.
-        onClick={() => onSimular(fatura, Math.round(fatura.valor * 90) / 100)}
+        onClick={() => onSimular(fatura, Math.round(fatura.valor_atualizado * 90) / 100)}
         disabled={carregando}
         title="Simula um Pix com valor diferente da fatura (deve ser recusado)"
         aria-label="Simular pagamento com valor divergente"

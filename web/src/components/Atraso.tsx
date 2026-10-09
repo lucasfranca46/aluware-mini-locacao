@@ -28,10 +28,22 @@ export const textoDiasAtraso = (dias: number) => (dias === 1 ? 'há 1 dia' : `h�
 
 /** Valor original + linha com o valor atualizado (multa + juros), só para faturas atrasadas. */
 export function ValorComEncargos({ fatura: f, alinhar = 'right' }: { fatura: Fatura; alinhar?: 'right' | 'left' }) {
+  const lado = alinhar === 'right' ? 'items-end' : 'items-start';
+  // Paga com atraso: mostra o total recebido e quanto foi de encargos.
+  if (f.status === 'pago' && f.encargos_pagos > 0 && f.valor_pago != null) {
+    return (
+      <span className={`inline-flex flex-col ${lado}`}>
+        <span>{formatBRL(f.valor_pago)}</span>
+        <span className="text-xs font-normal text-foreground/50">
+          {formatBRL(f.valor)} + {formatBRL(f.encargos_pagos)} de encargos
+        </span>
+      </span>
+    );
+  }
   if (f.dias_atraso <= 0) return <>{formatBRL(f.valor)}</>;
   const detalhe = `Multa 2%: ${formatBRL(f.multa)} · Juros 1% a.m. (${f.dias_atraso} ${f.dias_atraso === 1 ? 'dia' : 'dias'}): ${formatBRL(f.juros)}`;
   return (
-    <span className={`inline-flex flex-col ${alinhar === 'right' ? 'items-end' : 'items-start'}`}>
+    <span className={`inline-flex flex-col ${lado}`}>
       <span>{formatBRL(f.valor)}</span>
       <span title={detalhe} className="cursor-help text-xs font-semibold text-destructive underline decoration-dotted underline-offset-2">
         {formatBRL(f.valor_atualizado)} c/ encargos

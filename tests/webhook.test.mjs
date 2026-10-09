@@ -28,7 +28,8 @@ async function setup({ webhookToken } = {}) {
     return { status: res.status, body: await res.json() };
   };
   const { rows: [fatura] } = await db.query(
-    `select id, valor::float as valor from faturas where status = 'pendente' order by numero limit 1`);
+    // Primeira fatura em aberto. No seed ela está atrasada, então o valor devido inclui multa e juros.
+    `select id, valor_atualizado::float as valor from vw_faturas where status in ('pendente', 'atrasado') order by codigo limit 1`);
   return { db, call, fatura };
 }
 

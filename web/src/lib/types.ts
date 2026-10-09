@@ -13,11 +13,15 @@ export interface Fatura {
   valor: number;
   status: StatusFatura;
   pago_em: string | null;
-  // Encargos por atraso (informativos; a baixa exige o valor original).
+  // Encargos por atraso, calculados no banco para hoje. A baixa exige o
+  // valor_atualizado (= valor quando a fatura não está atrasada).
   dias_atraso: number;
   multa: number;
   juros: number;
   valor_atualizado: number;
+  // O que foi efetivamente pago (faturas pagas).
+  valor_pago: number | null;
+  encargos_pagos: number;
 }
 
 export type ResultadoWebhook =
@@ -33,6 +37,11 @@ export interface RespostaWebhook {
   resultado?: ResultadoWebhook;
   codigo?: string;
   pago_em?: string;
+  valor_pago?: number;
+  valor_original?: number;
+  multa?: number;
+  juros?: number;
+  dias_atraso?: number;
   valor_esperado?: number;
   valor_recebido?: number;
   erro?: string;

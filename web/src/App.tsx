@@ -49,19 +49,26 @@ export default function App() {
       const r = await enviarWebhook(f.id, valor);
 
       switch (r.resultado) {
-        case 'liquidada':
+        case 'liquidada': {
+          const pago = r.valor_pago ?? valor;
+          const encargos = Math.round((pago - f.valor) * 100) / 100;
           // Feedback imediato: atualiza a linha antes do refetch.
-          setFaturas((fs) => fs.map((x) => (x.id === f.id ? { ...x, status: 'pago', pago_em: r.pago_em! } : x)));
+          setFaturas((fs) => fs.map((x) => (x.id === f.id
+            ? { ...x, status: 'pago', pago_em: r.pago_em!, valor_pago: pago, encargos_pagos: encargos, dias_atraso: 0, multa: 0, juros: 0, valor_atualizado: x.valor }
+            : x)));
           setRecemPagas((s) => new Set(s).add(f.id));
           setTimeout(() => setRecemPagas((s) => { const n = new Set(s); n.delete(f.id); return n; }), 2000);
           toast({
             tipo: 'sucesso',
             titulo: `${f.codigo} paga`,
-            descricao: `${formatBRL(f.valor)} recebido via Pix em ${formatDataHoraBRT(r.pago_em!)} (Brasília).`,
+            descricao: encargos > 0
+              ? `${formatBRL(pago)} recebido via Pix (${formatBRL(f.valor)} + ${formatBRL(encargos)} de multa e juros) em ${formatDataHoraBRT(r.pago_em!)} (Brasília).`
+              : `${formatBRL(pago)} recebido via Pix em ${formatDataHoraBRT(r.pago_em!)} (Brasília).`,
             tecnico: `Webhook PAYMENT_RECEIVED · HTTP ${r.httpStatus} · liquidada`,
           });
           carregar();
           break;
+        }
         case 'ja_processada':
           toast({
             tipo: 'info',
@@ -106,15 +113,20 @@ export default function App() {
 
   const resumo = useMemo(() => {
     const soma = (st: StatusFatura) => filtradas.filter((f) => f.status === st);
-    const total = (fs: Fatura[], campo: 'valor' | 'valor_atualizado' = 'valor') => fs.reduce((acc, f) => acc + f[campo], 0);
+    const total = (fs: Fatura[], campo: 'valor' | 'valor_atualizado' | 'valor_pago' = 'valor') => fs.reduce((acc, f) => acc + (f[campo] ?? f.valor), 0);
     return {
       pendente: { qtd: soma('pendente').length, valor: total(soma('pendente')) },
       atrasado: { qtd: soma('atrasado').length, valor: total(soma('atrasado')), atualizado: total(soma('atrasado'), 'valor_atualizado') },
-      pago: { qtd: soma('pago').length, valor: total(soma('pago')) },
+      pago: { qtd: soma('pago').length, valor: total(soma('pago'), 'valor_pago') },
     };
   }, [filtradas]);
 
-  const visiveis = filtro === 'todas' ? filtradas : filtradas.filter((f) => f.status === filtro);
+  const visiveis = useMemo(() => {
+    if (filtro === 'todas') return filtradas;
+    const doStatus = filtradas.filter((f) => f.status === filtro);
+    // Aba "Pagas": pagamento mais recente primeiro.
+    return filtro === 'pago' ? [...doStatus].sort((a, b) => (b.pago_em ?? '').localeCompare(a.pago_em ?? '')) : doStatus;
+  }, [filtradas, filtro]);
 
   return (
     <div className="min-h-screen pb-16">
@@ -301,7 +313,7 @@ export default function App() {
 
         <p className="text-center text-xs text-foreground/50">
           Horários exibidos no fuso America/Sao_Paulo. O botão <CircleSlash className="inline h-3.5 w-3.5 -translate-y-px" /> simula um Pix com valor divergente.
-          Encargos de atraso (multa 2% + juros 1% a.m.) são informativos: a baixa exige o valor original da fatura.
+          Fatura atrasada é paga com multa de 2% + juros de 1% a.m., calculados no banco no dia do pagamento.
         </p>
       </main>
     </div>

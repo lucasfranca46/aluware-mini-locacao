@@ -4,7 +4,8 @@ import type { Fatura, RespostaReset, RespostaWebhook } from './types';
 import { hojeBRT } from './format';
 import { calcularEncargos, diasEntre } from './encargos';
 
-interface FaturaDemo extends Omit<Fatura, 'status' | 'dias_atraso' | 'multa' | 'juros' | 'valor_atualizado'> {
+interface FaturaDemo extends Omit<Fatura, 'status' | 'dias_atraso' | 'multa' | 'juros' | 'valor_atualizado' | 'encargos_pagos'> {
+  encargos_pagos: number;
   status: 'pendente' | 'pago';
 }
 
@@ -32,6 +33,8 @@ function gerarFaturas(cliente: string, modelo: string, placa: string, valor: num
       valor,
       status: i < pagas ? 'pago' : 'pendente',
       pago_em: i < pagas ? new Date().toISOString() : null,
+      valor_pago: i < pagas ? valor : null,
+      encargos_pagos: 0,
     };
   });
 }
@@ -69,13 +72,21 @@ export async function webhook(p: { fatura_id: string; valor_pago: number }): Pro
   await latencia();
   const f = faturas.find((x) => x.id === p.fatura_id);
   if (!f) return { httpStatus: 404, resultado: 'nao_encontrada' };
-  if (f.status === 'pago') return { httpStatus: 200, resultado: 'ja_processada', codigo: f.codigo, pago_em: f.pago_em! };
-  if (Math.round(p.valor_pago * 100) !== Math.round(f.valor * 100)) {
-    return { httpStatus: 422, resultado: 'valor_divergente', codigo: f.codigo, valor_esperado: f.valor, valor_recebido: p.valor_pago };
+  if (f.status === 'pago') return { httpStatus: 200, resultado: 'ja_processada', codigo: f.codigo, pago_em: f.pago_em!, valor_pago: f.valor_pago! };
+  // Mesma regra de liquidar_fatura: atrasada exige valor + multa + juros.
+  const dias = Math.max(0, diasEntre(f.vencimento, hojeBRT()));
+  const enc = calcularEncargos(f.valor, dias);
+  if (Math.round(p.valor_pago * 100) !== Math.round(enc.valor_atualizado * 100)) {
+    return { httpStatus: 422, resultado: 'valor_divergente', codigo: f.codigo, valor_esperado: enc.valor_atualizado, valor_recebido: p.valor_pago };
   }
   f.status = 'pago';
   f.pago_em = new Date().toISOString();
-  return { httpStatus: 200, resultado: 'liquidada', codigo: f.codigo, pago_em: f.pago_em };
+  f.valor_pago = enc.valor_atualizado;
+  f.encargos_pagos = Math.round((enc.multa + enc.juros) * 100) / 100;
+  return {
+    httpStatus: 200, resultado: 'liquidada', codigo: f.codigo, pago_em: f.pago_em,
+    valor_pago: f.valor_pago, valor_original: f.valor, multa: enc.multa, juros: enc.juros, dias_atraso: dias,
+  };
 }
 
 export async function resetar(): Promise<RespostaReset> {

@@ -20,14 +20,16 @@ async function novoBanco() {
   return db;
 }
 
-async function novoContrato(db, { valor = 400, semanas = 4, status = 'ativo' } = {}) {
+// Por padrão o contrato começa hoje (Brasília): nenhuma parcela vencida, então
+// o valor devido é o valor da parcela, sem encargos.
+async function novoContrato(db, { valor = 400, semanas = 4, status = 'ativo', inicio = null } = {}) {
   const { rows: [cl] } = await db.query(
     `insert into clientes (nome, cpf) values ('Teste', lpad((random()*1e10)::bigint::text, 11, '0')) returning id`);
   const { rows: [ve] } = await db.query(
     `insert into veiculos (placa, modelo) values ('TST' || floor(random()*9)::int || 'A' || lpad(floor(random()*99)::int::text, 2, '0'), 'DK 160') returning id`);
   const { rows: [ct] } = await db.query(
     `insert into contratos (cliente_id, veiculo_id, valor_semanal, qtd_semanas, data_inicio, status)
-     values ($1, $2, $3, $4, '2026-10-01', $5) returning id`, [cl.id, ve.id, valor, semanas, status]);
+     values ($1, $2, $3, $4, coalesce($6::date, hoje_brt()), $5) returning id`, [cl.id, ve.id, valor, semanas, status, inicio]);
   return ct.id;
 }
 
@@ -39,7 +41,7 @@ const liquidar = async (db, id, valor) =>
 
 test('contrato ativo de R$ 400 x 4 semanas gera 4 faturas semanais', async () => {
   const db = await novoBanco();
-  const id = await novoContrato(db);
+  const id = await novoContrato(db, { inicio: '2026-10-01' });
   const fs = await faturasDo(db, id);
 
   assert.equal(fs.length, 4);
@@ -208,8 +210,8 @@ test('encargos de atraso: multa 2% + juros 1% a.m. pro rata, só para faturas at
 
 test('fatura paga não gera encargos, mesmo vencida', async () => {
   const db = await novoBanco();
-  const { rows: [f] } = await db.query(`select id from vw_faturas where placa = 'FAB1C23' and parcela = 1`);
-  await db.query(`select liquidar_fatura($1, 400)`, [f.id]);
+  const { rows: [f] } = await db.query(`select id, valor_atualizado from vw_faturas where placa = 'FAB1C23' and parcela = 1`);
+  await db.query(`select liquidar_fatura($1, $2)`, [f.id, f.valor_atualizado]);
   const { rows: [r] } = await db.query(`select status, dias_atraso, multa::float, juros::float from vw_faturas where id = $1`, [f.id]);
   assert.deepEqual(r, { status: 'pago', dias_atraso: 0, multa: 0, juros: 0 });
 });
@@ -217,7 +219,7 @@ test('fatura paga não gera encargos, mesmo vencida', async () => {
 test('resetar_demo recria o cenário, inclusive faturas pagas, e limita a 1 reset a cada 30 s', async () => {
   const db = await novoBanco();
   // Simula uso do site: paga tudo que está atrasado.
-  const { rows: atrasadas } = await db.query(`select id, valor from faturas f where exists (select 1 from vw_faturas v where v.id = f.id and v.status = 'atrasado')`);
+  const { rows: atrasadas } = await db.query(`select id, valor_atualizado as valor from vw_faturas where status = 'atrasado'`);
   for (const f of atrasadas) await db.query(`select liquidar_fatura($1, $2)`, [f.id, f.valor]);
 
   // Reset logo depois da carga inicial: bloqueado pelo limite de 30 s.
@@ -237,4 +239,41 @@ test('resetar_demo recria o cenário, inclusive faturas pagas, e limita a 1 rese
   await db.exec('set role anon');
   await assert.rejects(db.query(`update demo_controle set resetado_em = now() - interval '1 hour'`), /permission denied/);
   await db.exec('reset role');
+});
+
+test('fatura atrasada só é liquidada com multa + juros, gravados separadamente', async () => {
+  const db = await novoBanco();
+  // Carlos, parcela 1: R$ 400 vencida há 14 dias -> 400 + 8,00 + 1,87
+  const { rows: [f] } = await db.query(`select id from vw_faturas where placa = 'FAB1C23' and parcela = 1`);
+
+  const original = await liquidar(db, f.id, 400);
+  assert.equal(original.resultado, 'valor_divergente');
+  assert.equal(Number(original.valor_esperado), 409.87);
+
+  const r = await liquidar(db, f.id, 409.87);
+  assert.equal(r.resultado, 'liquidada');
+  assert.equal(r.dias_atraso, 14);
+
+  const { rows: [p] } = await db.query(
+    `select valor_pago::float, multa_paga::float, juros_pago::float from faturas where id = $1`, [f.id]);
+  assert.deepEqual(p, { valor_pago: 409.87, multa_paga: 8, juros_pago: 1.87 });
+
+  const { rows: [v] } = await db.query(
+    `select status, dias_atraso, encargos_pagos::float, valor_pago::float from vw_faturas where id = $1`, [f.id]);
+  assert.deepEqual(v, { status: 'pago', dias_atraso: 0, encargos_pagos: 9.87, valor_pago: 409.87 });
+
+  // Reenvio com o mesmo valor: idempotente, sem recalcular encargos.
+  assert.equal((await liquidar(db, f.id, 409.87)).resultado, 'ja_processada');
+  await assert.rejects(db.query(`update faturas set juros_pago = 0 where id = $1`, [f.id]), /imutáveis/);
+});
+
+test('fatura em dia (ou vencendo hoje) é paga sem encargos', async () => {
+  const db = await novoBanco();
+  // Carlos, parcela 3: vence hoje -> ainda sem atraso
+  const { rows: [f] } = await db.query(`select id, status, dias_atraso from vw_faturas where placa = 'FAB1C23' and parcela = 3`);
+  assert.equal(f.status, 'pendente');
+  assert.equal(f.dias_atraso, 0);
+  const r = await liquidar(db, f.id, 400);
+  assert.equal(r.resultado, 'liquidada');
+  assert.equal(Number(r.multa) + Number(r.juros), 0);
 });
