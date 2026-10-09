@@ -155,7 +155,7 @@ export default function App() {
       <main className="container -mt-14 relative space-y-6">
         {/* Resumo */}
         <section className="grid gap-4 sm:grid-cols-3">
-          <CardResumo Icon={Clock} titulo="A receber" qtd={resumo.pendente.qtd} valor={resumo.pendente.valor} tom="primary" />
+          <CardResumo Icon={Clock} titulo="A vencer" qtd={resumo.pendente.qtd} valor={resumo.pendente.valor} tom="primary" />
           <CardResumo Icon={AlertCircle} titulo="Em atraso" qtd={resumo.atrasado.qtd} valor={resumo.atrasado.valor} tom="destructive" />
           <CardResumo Icon={CheckCircle2} titulo="Recebido" qtd={resumo.pago.qtd} valor={resumo.pago.valor} tom="success" />
         </section>
@@ -173,6 +173,7 @@ export default function App() {
                 <button
                   key={f.id}
                   onClick={() => setFiltro(f.id)}
+                  aria-pressed={filtro === f.id}
                   className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
                     filtro === f.id ? 'bg-card text-primary shadow-sm' : 'text-foreground/60 hover:text-primary'
                   }`}

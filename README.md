@@ -1,5 +1,7 @@
 # Mini-Locação com Webhook — Desafio AluWare
 
+[![CI](https://github.com/lucasfranca46/aluware-mini-locacao/actions/workflows/ci.yml/badge.svg)](https://github.com/lucasfranca46/aluware-mini-locacao/actions/workflows/ci.yml)
+
 Rotina de locação de motos: o **banco gera as faturas semanais** ao ativar um contrato, e um **webhook idempotente** liquida a fatura quando o Pix é confirmado, gravando a baixa no fuso de Brasília.
 
 | Camada | Stack | Onde |
@@ -34,7 +36,9 @@ npm run dev          # http://localhost:8080
 
 ### 2. Testes do banco e do webhook (sem Docker)
 
-Os testes sobem um PostgreSQL real em memória (PGlite), aplicam a migration + seed e exercitam triggers, constraints e o handler HTTP do webhook:
+Os testes sobem um PostgreSQL real em memória (PGlite), aplicam as migrations + seed e exercitam triggers, constraints, permissões e o handler HTTP do webhook.
+
+> **Requer Node 22.18 ou mais recente** (versão em `.nvmrc`). Os testes importam o `handler.ts` direto, e só a partir dessa versão o Node executa TypeScript sem etapa de build. Com nvm: `nvm use`.
 
 ```bash
 npm install
@@ -53,6 +57,7 @@ npm test
 ✔ constraint impede marcar como pago sem dados de baixa
 ✔ view deriva status atrasado e seed tem cenários variados
 ✔ veículo não pode ter dois contratos ativos
+✔ papel anon (chave pública do site) lê a vw_faturas, mas não CPF/e-mail/telefone
 ✔ PAYMENT_RECEIVED com valor correto liquida (200)
 ✔ reenvio do mesmo webhook (inclusive em paralelo) responde 200 sem duplicar baixa
 ✔ valor divergente -> 422 e fatura continua pendente
@@ -65,7 +70,7 @@ npm test
 ✔ Asaas: reenvio é idempotente e PAYMENT_CONFIRMED também conta como pago
 ✔ Asaas: recusa definitiva responde 200 (sem reenvio) e não liquida
 ✔ Asaas: outros eventos são ignorados e payload sem externalReference é 400
-ℹ tests 23 · pass 23 · fail 0
+ℹ tests 24 · pass 24 · fail 0
 ```
 
 ### 3. Stack completa com Supabase
@@ -133,6 +138,7 @@ Sem o header, ou com o token errado, a resposta é **401**. Se o `WEBHOOK_TOKEN`
 - **Fuso de Brasília**: `pago_em` é `timestamptz` (o instante absoluto, que é o correto para comparar e ordenar). `pago_em_brt` guarda o mesmo instante como relógio de parede de `America/Sao_Paulo`, conforme o requisito, e já vem pronto para relatórios e conciliação. O frontend também formata com `timeZone: 'America/Sao_Paulo'`, independente do fuso de quem acessa.
 - **`atrasado` é derivado, não persistido**: a view `vw_faturas` calcula `pendente + vencimento < hoje (BRT)`. Isso dispensa cron job para "virar" status e evita fatura marcada como atrasada que já foi paga.
 - **Extras**: um veículo não pode ter dois contratos ativos (índice único parcial), validação de CPF e placa Mercosul, e RLS habilitado com escrita apenas via `service_role`.
+- **Leitura pública mínima** ([`20261009000100_restringir_leitura_publica.sql`](supabase/migrations/20261009000100_restringir_leitura_publica.sql)): a anon key vai no JavaScript do site, então tudo que o papel `anon` lê é público na prática. Por isso ele só tem privilégio nas **colunas** que a `vw_faturas` usa. CPF, e-mail e telefone não são acessíveis pela API, e um teste garante isso. A view segue com `security_invoker = true`, sem recorrer a uma view *security definer*.
 
 ### Webhook: atomicidade e idempotência
 
@@ -200,7 +206,9 @@ Como este projeto é um **teste técnico**, deixamos esses detalhes visíveis de
 
 ```
 ├── supabase/
-│   ├── migrations/20261009000000_mini_locacao.sql   # tabelas, triggers, constraints, função, view, RLS
+│   ├── migrations/
+│   │   ├── 20261009000000_mini_locacao.sql              # tabelas, triggers, constraints, função, view, RLS
+│   │   └── 20261009000100_restringir_leitura_publica.sql # anon só lê as colunas da tela
 │   ├── seed.sql                                     # 3 clientes, 3 motos, 3 contratos ativos
 │   ├── config.toml
 │   └── functions/webhook-pagamento/
@@ -209,5 +217,18 @@ Como este projeto é um **teste técnico**, deixamos esses detalhes visíveis de
 ├── tests/
 │   ├── db.test.mjs       # regras do banco
 │   └── webhook.test.mjs  # handler HTTP + banco
+├── .github/workflows/ci.yml  # testes + build a cada push
 └── web/                  # React + TS + Tailwind
 ```
+
+---
+
+## Limitações conhecidas e próximos passos
+
+O escopo segue o enunciado (2 a 3 horas). Em produção, estes pontos seriam diferentes:
+
+- **A rota de simulação sairia.** Hoje qualquer pessoa pode chamar o webhook no formato do desafio e marcar uma fatura como paga. Isso é intencional para o botão "Simular pagamento" funcionar no navegador. Em produção, só o formato do gateway (com `asaas-access-token`) ficaria ativo.
+- **Painel com login.** A tela é pública e só lê dados. Um sistema real exigiria autenticação (Supabase Auth) e políticas de RLS por usuário/empresa.
+- **Conciliação de divergências.** Pagamentos com `valor_divergente` hoje ficam só no log da função. O ideal é gravá-los numa tabela de ocorrências para o financeiro tratar (estorno ou baixa manual).
+- **Publicação da função pelo CI.** No deploy atual, a Edge Function foi publicada pelo editor do painel do Supabase, com o `handler.ts` embutido no `index.ts`, porque o login da CLI não estava disponível. O caminho correto é `supabase functions deploy` num job de CI, a partir deste repositório.
+- **Projeto Supabase gratuito pausa após ~7 dias sem uso.** Se o site não carregar as faturas, o projeto precisa ser reativado no painel.

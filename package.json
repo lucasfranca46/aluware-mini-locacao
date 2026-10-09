@@ -2,6 +2,9 @@
   "name": "aluware-mini-locacao",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
   "scripts": {
     "test": "node --test tests/db.test.mjs tests/webhook.test.mjs",
     "dev": "npm --prefix web run dev",

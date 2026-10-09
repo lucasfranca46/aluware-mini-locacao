@@ -2,10 +2,13 @@
 // Não precisa de Docker nem Supabase: `npm test` na raiz.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 
-const migration = readFileSync(new URL('../supabase/migrations/20261009000000_mini_locacao.sql', import.meta.url), 'utf8');
+// Todas as migrations, na ordem do nome (timestamp), como o Supabase aplica.
+const dirMigrations = new URL('../supabase/migrations/', import.meta.url);
+const migration = readdirSync(dirMigrations).filter((f) => f.endsWith('.sql')).sort()
+  .map((f) => readFileSync(new URL(f, dirMigrations), 'utf8')).join('\n');
 const seed = readFileSync(new URL('../supabase/seed.sql', import.meta.url), 'utf8');
 
 async function novoBanco() {
@@ -153,4 +156,25 @@ test('veículo não pode ter dois contratos ativos', async () => {
               values ('22222222-2222-4222-8222-222222222222', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 400, 4)`),
     /contratos_veiculo_ativo_uq/,
   );
+});
+
+test('papel anon (chave pública do site) lê a vw_faturas, mas não CPF/e-mail/telefone', async () => {
+  const db = await novoBanco();
+  await db.exec('set role anon');
+
+  const { rows } = await db.query(`select codigo, cliente, veiculo, status from vw_faturas`);
+  assert.equal(rows.length, 10);
+  assert.ok(rows[0].cliente && rows[0].veiculo);
+
+  for (const sql of [
+    'select cpf from clientes',
+    'select email from clientes',
+    'select telefone from clientes',
+    'select * from clientes',
+    'select valor_semanal from contratos',
+  ]) {
+    await assert.rejects(db.query(sql), /permission denied/, sql);
+  }
+  await assert.rejects(db.query(`update faturas set status = 'pago'`), /permission denied/);
+  await db.exec('reset role');
 });

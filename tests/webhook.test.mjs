@@ -1,11 +1,14 @@
 // Integração: handler HTTP da Edge Function + função liquidar_fatura no Postgres (PGlite).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import { createHandler } from '../supabase/functions/webhook-pagamento/handler.ts';
 
-const migration = readFileSync(new URL('../supabase/migrations/20261009000000_mini_locacao.sql', import.meta.url), 'utf8');
+// Todas as migrations, na ordem do nome (timestamp), como o Supabase aplica.
+const dirMigrations = new URL('../supabase/migrations/', import.meta.url);
+const migration = readdirSync(dirMigrations).filter((f) => f.endsWith('.sql')).sort()
+  .map((f) => readFileSync(new URL(f, dirMigrations), 'utf8')).join('\n');
 const seed = readFileSync(new URL('../supabase/seed.sql', import.meta.url), 'utf8');
 
 async function setup({ webhookToken } = {}) {

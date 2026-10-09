@@ -35,7 +35,8 @@ export function AcoesFatura({ fatura, carregando, onSimular }: Props) {
         Simular pagamento
       </button>
       <button
-        onClick={() => onSimular(fatura, Math.round((fatura.valor - 10) * 100) / 100)}
+        // 90% do valor: sempre positivo e sempre diferente, qualquer que seja a fatura.
+        onClick={() => onSimular(fatura, Math.round(fatura.valor * 90) / 100)}
         disabled={carregando}
         title="Simula um Pix com valor diferente da fatura (deve ser recusado)"
         aria-label="Simular pagamento com valor divergente"
