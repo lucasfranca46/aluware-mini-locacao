@@ -145,7 +145,9 @@ test('view deriva status atrasado e seed tem cenários variados', async () => {
   const db = await novoBanco();
   const { rows } = await db.query(`select status, count(*)::int n from vw_faturas group by status order by status`);
   const porStatus = Object.fromEntries(rows.map(r => [r.status, r.n]));
-  assert.equal(porStatus.atrasado, 2);
+  // Carlos 2 + Mariana 4 + Pedro 1 + Lucas 3 (as 3 primeiras dele já vêm pagas)
+  assert.equal(porStatus.atrasado, 10);
+  assert.equal(porStatus.pago, 3);
   assert.ok(porStatus.pendente > 0);
 });
 
@@ -163,7 +165,7 @@ test('papel anon (chave pública do site) lê a vw_faturas, mas não CPF/e-mail/
   await db.exec('set role anon');
 
   const { rows } = await db.query(`select codigo, cliente, veiculo, status from vw_faturas`);
-  assert.equal(rows.length, 10);
+  assert.equal(rows.length, 32);
   assert.ok(rows[0].cliente && rows[0].veiculo);
 
   for (const sql of [
@@ -210,4 +212,29 @@ test('fatura paga não gera encargos, mesmo vencida', async () => {
   await db.query(`select liquidar_fatura($1, 400)`, [f.id]);
   const { rows: [r] } = await db.query(`select status, dias_atraso, multa::float, juros::float from vw_faturas where id = $1`, [f.id]);
   assert.deepEqual(r, { status: 'pago', dias_atraso: 0, multa: 0, juros: 0 });
+});
+
+test('resetar_demo recria o cenário, inclusive faturas pagas, e limita a 1 reset a cada 30 s', async () => {
+  const db = await novoBanco();
+  // Simula uso do site: paga tudo que está atrasado.
+  const { rows: atrasadas } = await db.query(`select id, valor from faturas f where exists (select 1 from vw_faturas v where v.id = f.id and v.status = 'atrasado')`);
+  for (const f of atrasadas) await db.query(`select liquidar_fatura($1, $2)`, [f.id, f.valor]);
+
+  // Reset logo depois da carga inicial: bloqueado pelo limite de 30 s.
+  const { rows: [bloqueado] } = await db.query(`select resetar_demo() as r`);
+  assert.equal(bloqueado.r.resultado, 'aguarde');
+
+  await db.query(`update demo_controle set resetado_em = now() - interval '1 minute'`);
+  await db.exec('set role anon');                       // o botão do site chama como anon
+  const { rows: [ok] } = await db.query(`select resetar_demo() as r`);
+  const { rows: [{ n }] } = await db.query(`select count(*)::int n from vw_faturas where status = 'atrasado'`);
+  await db.exec('reset role');
+  assert.equal(ok.r.resultado, 'ok');
+  assert.equal(ok.r.faturas, 32);
+  assert.equal(n, 10);
+
+  // anon não consegue mexer no controle do reset diretamente.
+  await db.exec('set role anon');
+  await assert.rejects(db.query(`update demo_controle set resetado_em = now() - interval '1 hour'`), /permission denied/);
+  await db.exec('reset role');
 });

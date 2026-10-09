@@ -37,3 +37,7 @@ export interface RespostaWebhook {
   valor_recebido?: number;
   erro?: string;
 }
+
+export type RespostaReset =
+  | { resultado: 'ok'; faturas: number }
+  | { resultado: 'aguarde'; segundos: number };

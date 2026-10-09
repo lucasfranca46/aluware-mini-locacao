@@ -61,6 +61,7 @@ npm test
 ✔ vw_faturas expõe modelo e placa separados (filtros da tela)
 ✔ encargos de atraso: multa 2% + juros 1% a.m. pro rata, só para faturas atrasadas
 ✔ fatura paga não gera encargos, mesmo vencida
+✔ resetar_demo recria o cenário, inclusive faturas pagas, e limita a 1 reset a cada 30 s
 ✔ PAYMENT_RECEIVED com valor correto liquida (200)
 ✔ reenvio do mesmo webhook (inclusive em paralelo) responde 200 sem duplicar baixa
 ✔ valor divergente -> 422 e fatura continua pendente
@@ -73,7 +74,7 @@ npm test
 ✔ Asaas: reenvio é idempotente e PAYMENT_CONFIRMED também conta como pago
 ✔ Asaas: recusa definitiva responde 200 (sem reenvio) e não liquida
 ✔ Asaas: outros eventos são ignorados e payload sem externalReference é 400
-ℹ tests 27 · pass 27 · fail 0
+ℹ tests 28 · pass 28 · fail 0
 ```
 
 ### 3. Stack completa com Supabase
@@ -205,6 +206,16 @@ Faturas atrasadas são o problema real de uma locadora, então a tela vai além 
 - **Cobrar no WhatsApp:** botão com mensagem pronta (nome, parcela, moto, placa, vencimento, dias em atraso e valor atualizado). O link `wa.me` abre o WhatsApp para escolher o contato, então o telefone do cliente não precisa sair do banco.
 - **Selo "Inadimplente":** cliente com 2 ou mais parcelas atrasadas. A dica sugere avaliar o bloqueio da moto pelo rastreador, prática comum no setor.
 
+### Dados de demonstração e botão "Resetar dados de teste"
+
+O site é público, então quem testa vai pagando as faturas e logo não sobra nada atrasado. O botão **Resetar dados de teste**, no topo, recria o cenário inicial: 7 clientes, 7 motos de 4 modelos e 32 faturas, com clientes em dia, atrasados, inadimplentes e algumas faturas já pagas.
+
+- A carga fica em `public.resetar_demo()` ([`20261009000400_resetar_demo.sql`](supabase/migrations/20261009000400_resetar_demo.sql)), e o `seed.sql` só chama essa função. Assim, o seed e o botão usam exatamente os mesmos dados.
+- As datas são relativas a "hoje" em Brasília, então o cenário é igual em qualquer dia.
+- A função usa `TRUNCATE`, que não dispara os triggers de linha. É o único caminho que passa por cima da regra "fatura paga é imutável", de propósito. `UPDATE` e `DELETE` continuam bloqueados.
+- O botão pede confirmação com um segundo clique, e o banco aceita **1 reset a cada 30 segundos**.
+- **Só existe por ser demonstração.** Em produção, essa função não existiria.
+
 ### Filtros
 
 Campos separados para **cliente**, **placa** e **veículo** (modelo). Cliente e placa sugerem valores cadastrados, a placa ignora hífen e maiúsculas/minúsculas, e os cards de resumo acompanham os filtros.
@@ -227,8 +238,9 @@ Como este projeto é um **teste técnico**, deixamos esses detalhes visíveis de
 │   │   ├── 20261009000000_mini_locacao.sql              # tabelas, triggers, constraints, função, view, RLS
 │   │   ├── 20261009000100_restringir_leitura_publica.sql # anon só lê as colunas da tela
 │   │   ├── 20261009000200_vw_faturas_modelo_placa.sql    # colunas para os filtros
-│   │   └── 20261009000300_encargos_atraso.sql            # dias em atraso, multa, juros
-│   ├── seed.sql                                     # 3 clientes, 3 motos, 3 contratos ativos
+│   │   ├── 20261009000300_encargos_atraso.sql            # dias em atraso, multa, juros
+│   │   └── 20261009000400_resetar_demo.sql               # cenário de demonstração + reset
+│   ├── seed.sql                                     # chama resetar_demo(): 7 clientes, 7 motos, 32 faturas
 │   ├── config.toml
 │   └── functions/webhook-pagamento/
 │       ├── index.ts      # entrypoint Deno (Supabase client + Deno.serve)

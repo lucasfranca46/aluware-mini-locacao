@@ -6,6 +6,7 @@ import type { Fatura, StatusFatura } from '@/lib/types';
 import { StatusBadge } from '@/components/StatusBadge';
 import { AcoesFatura } from '@/components/AcoesFatura';
 import { useToast } from '@/components/Toaster';
+import { BotaoResetDemo } from '@/components/BotaoResetDemo';
 import { clientesInadimplentes, SeloInadimplente, textoDiasAtraso, ValorComEncargos } from '@/components/Atraso';
 import { aplicarFiltros, FILTROS_VAZIOS, FiltrosFaturas, temFiltro, type Filtros } from '@/components/FiltrosFaturas';
 
@@ -148,6 +149,8 @@ export default function App() {
                 Simule a notificação de Pix do gateway e acompanhe a baixa em tempo real.
               </p>
             </div>
+            <div className="flex flex-wrap gap-2">
+            <BotaoResetDemo onResetado={() => { setFiltros(FILTROS_VAZIOS); setFiltro('todas'); setCarregando(true); carregar(); }} />
             <button
               onClick={() => { setCarregando(true); carregar(); }}
               className="inline-flex items-center gap-2 rounded-full border-2 border-white/30 px-5 py-2.5 text-sm font-semibold backdrop-blur-sm transition-all hover:bg-white/10"
@@ -155,6 +158,7 @@ export default function App() {
               <RefreshCw className={`h-4 w-4 ${carregando ? 'animate-spin' : ''}`} />
               Atualizar
             </button>
+            </div>
           </div>
         </div>
       </header>

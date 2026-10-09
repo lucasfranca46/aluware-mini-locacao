@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import type { Fatura, RespostaWebhook } from './types';
+import type { Fatura, RespostaReset, RespostaWebhook } from './types';
 import * as demo from './demo';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -43,4 +43,12 @@ export async function enviarWebhook(faturaId: string, valorPago: number): Promis
   });
   const body = await res.json().catch(() => ({ erro: 'Resposta inválida do servidor' }));
   return { httpStatus: res.status, ...body };
+}
+
+/** Recria os dados de demonstração (public.resetar_demo, limitado a 1 vez a cada 30 s). */
+export async function resetarDemo(): Promise<RespostaReset> {
+  if (!supabase) return demo.resetar();
+  const { data, error } = await supabase.rpc('resetar_demo');
+  if (error) throw error;
+  return data as RespostaReset;
 }
