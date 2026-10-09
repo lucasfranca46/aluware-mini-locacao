@@ -21,5 +21,9 @@ const dataHoraBRT = new Intl.DateTimeFormat('pt-BR', {
 });
 export const formatDataHoraBRT = (iso: string) => dataHoraBRT.format(new Date(iso));
 
+const diaBRT = new Intl.DateTimeFormat('en-CA', { timeZone: TZ }); // YYYY-MM-DD
+/** Data de calendário em Brasília de um instante ISO (ex.: o pago_em). */
+export const dataBRT = (iso: string) => diaBRT.format(new Date(iso));
+
 export const hojeBRT = () =>
   new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date()); // YYYY-MM-DD

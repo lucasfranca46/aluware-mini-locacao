@@ -18,8 +18,13 @@ const addDias = (iso: string, dias: number) => {
 let seq = 0;
 function gerarFaturas(cliente: string, modelo: string, placa: string, valor: number, semanas: number, offsetInicio: number, pagas = 0): FaturaDemo[] {
   const inicio = addDias(hojeBRT(), offsetInicio);
+  const hoje = hojeBRT();
   return Array.from({ length: semanas }, (_, i) => {
     seq += 1;
+    const vencimento = addDias(inicio, 7 * (i + 1));
+    const paga = i < pagas;
+    // Como em resetar_demo(): as já pagas foram quitadas hoje, com os encargos do atraso.
+    const enc = calcularEncargos(valor, paga ? Math.max(0, diasEntre(vencimento, hoje)) : 0);
     return {
       id: crypto.randomUUID(),
       codigo: `FAT-${String(seq).padStart(6, '0')}`,
@@ -29,12 +34,12 @@ function gerarFaturas(cliente: string, modelo: string, placa: string, valor: num
       veiculo: `${modelo} · ${placa}`,
       modelo,
       placa,
-      vencimento: addDias(inicio, 7 * (i + 1)),
+      vencimento,
       valor,
-      status: i < pagas ? 'pago' : 'pendente',
-      pago_em: i < pagas ? new Date().toISOString() : null,
-      valor_pago: i < pagas ? valor : null,
-      encargos_pagos: 0,
+      status: paga ? 'pago' : 'pendente',
+      pago_em: paga ? new Date().toISOString() : null,
+      valor_pago: paga ? enc.valor_atualizado : null,
+      encargos_pagos: paga ? Math.round((enc.multa + enc.juros) * 100) / 100 : 0,
     };
   });
 }

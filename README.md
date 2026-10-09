@@ -110,15 +110,24 @@ npm run dev
 
 ### Testando o webhook via cURL
 
+O valor enviado precisa ser o **valor devido no dia**: o valor da parcela se ela estiver em dia, ou valor + multa + juros se estiver atrasada. Pegue a fatura e o valor certo na view (SQL Editor do Supabase):
+
+```sql
+select id, codigo, status, valor_atualizado
+  from vw_faturas
+ where status in ('pendente', 'atrasado')
+ order by vencimento;
+```
+
 **Formato do desafio (simulação):**
 
 ```bash
 curl -i -X POST "$SUPABASE_URL/functions/v1/webhook-pagamento" \
   -H "Content-Type: application/json" \
-  -d '{"fatura_id":"<uuid>","valor_pago":400.00,"evento":"PAYMENT_RECEIVED"}'
+  -d '{"fatura_id":"<id>","valor_pago":<valor_atualizado>,"evento":"PAYMENT_RECEIVED"}'
 ```
 
-Rode duas vezes: a primeira retorna `"resultado":"liquidada"`, a segunda `"resultado":"ja_processada"`. As duas retornam **200**.
+Rode duas vezes: a primeira retorna `"resultado":"liquidada"`, a segunda `"resultado":"ja_processada"`. As duas retornam **200**. Com outro valor (por exemplo, o valor original de uma fatura atrasada), a resposta é **422** `valor_divergente`, com o `valor_esperado` no corpo.
 
 **Formato Asaas (como o gateway real envia):**
 
@@ -126,7 +135,7 @@ Rode duas vezes: a primeira retorna `"resultado":"liquidada"`, a segunda `"resul
 curl -i -X POST "$SUPABASE_URL/functions/v1/webhook-pagamento" \
   -H "Content-Type: application/json" \
   -H "asaas-access-token: $WEBHOOK_TOKEN" \
-  -d '{"event":"PAYMENT_RECEIVED","payment":{"id":"pay_123","value":400.00,"billingType":"PIX","externalReference":"<uuid-da-fatura>"}}'
+  -d '{"event":"PAYMENT_RECEIVED","payment":{"id":"pay_123","value":<valor_atualizado>,"billingType":"PIX","externalReference":"<id>"}}'
 ```
 
 Sem o header, ou com o token errado, a resposta é **401**. Se o `WEBHOOK_TOKEN` não estiver configurado na função, é **503**.
@@ -195,6 +204,7 @@ A lógica HTTP fica em `handler.ts`, sem dependências de runtime, e por isso os
 
 - Visual alinhado à identidade da Alu.GO: Montserrat, paleta de azuis (`--primary: 200 100% 50%`, azul-marinho), `gradient-primary`, `shadow-elegant` e tokens HSL no padrão shadcn/ui, a mesma base usada em alugomotos.com.br.
 - Tabela no desktop, cards no mobile, filtros por status e cards de resumo (a receber, em atraso, recebido).
+- **Componentes:** `LinhaFatura` (tabela) e `CartaoFatura` (celular) compartilham as regras de exibição. No celular, a divisão de multa e juros aparece por escrito, porque não há "passar o mouse".
 - **Feedback imediato**: a linha atualiza na hora (badge animado, destaque verde e horário da baixa), aparece um toast com o horário em Brasília, e a lista é recarregada em seguida para confirmar o estado do servidor.
 - Botões de teste: **Simular pagamento**, **Reenviar webhook** (demonstra a idempotência) e **⊘** (simula Pix com valor divergente).
 
@@ -208,7 +218,7 @@ Faturas atrasadas são o problema real de uma locadora, então a tela vai além 
 - **Uma única regra de cálculo.** `calcular_encargos(valor, vencimento, data)` é usada pela view (o que a tela mostra) e pela `liquidar_fatura` (o que o banco aceita). Por isso, o valor exibido e o valor aceito nunca divergem.
 - **A baixa separa parcela, multa e juros** (`multa_paga`, `juros_pago`), que também ficam imutáveis. A fatura paga com atraso mostra "R$ 400,00 + R$ 9,87 de encargos", e o card "Recebido" soma o que entrou de fato.
 - **Cobrar no WhatsApp:** botão com mensagem pronta (nome, parcela, moto, placa, vencimento, dias em atraso e valor atualizado). O link `wa.me` abre o WhatsApp para escolher o contato, então o telefone do cliente não precisa sair do banco.
-- **Selo "Inadimplente":** aparece em toda fatura **atrasada**. Faturas pagas ou a vencer do mesmo cliente não recebem o selo. O limite é configurável em `PARCELAS_INADIMPLENCIA` (`web/src/components/Atraso.tsx`), por exemplo 2 para marcar só a partir da segunda parcela em atraso. A dica sugere avaliar o bloqueio da moto pelo rastreador, prática comum no setor.
+- **Selo "Inadimplente":** aparece em toda fatura **atrasada**. Faturas pagas ou a vencer do mesmo cliente não recebem o selo. Quando uma fatura atrasada é paga, o selo sai e fica a observação **"Pago com N dias de atraso"** (calculada a partir do vencimento e da data do pagamento em Brasília), para o histórico do cliente não se perder. O limite é configurável em `PARCELAS_INADIMPLENCIA` (`web/src/components/Atraso.tsx`), por exemplo 2 para marcar só a partir da segunda parcela em atraso. A dica sugere avaliar o bloqueio da moto pelo rastreador, prática comum no setor.
 
 ### Dados de demonstração e botão "Resetar dados de teste"
 
@@ -269,5 +279,6 @@ O escopo segue o enunciado (2 a 3 horas). Em produção, estes pontos seriam dif
 - **A rota de simulação sairia.** Hoje qualquer pessoa pode chamar o webhook no formato do desafio e marcar uma fatura como paga. Isso é intencional para o botão "Simular pagamento" funcionar no navegador. Em produção, só o formato do gateway (com `asaas-access-token`) ficaria ativo.
 - **Painel com login.** A tela é pública e só lê dados. Um sistema real exigiria autenticação (Supabase Auth) e políticas de RLS por usuário/empresa.
 - **Conciliação de divergências.** Pagamentos com `valor_divergente` hoje ficam só no log da função. O ideal é gravá-los numa tabela de ocorrências para o financeiro tratar (estorno ou baixa manual).
+- **Encargos iguais no gateway.** No formato Asaas, o webhook exige o valor que o nosso banco calcula (multa 2% + juros 1% a.m.). No Asaas, multa e juros são configurados na própria cobrança. Se a configuração lá for diferente, todo pagamento atrasado seria recusado (200 + `valor_divergente`, sem reenvio). Em produção, a regra precisa ser a mesma nos dois lados, ou o webhook deve aceitar o valor calculado pelo Asaas e conferir valor original + encargos dentro de uma tolerância.
 - **Publicação da função pelo CI.** No deploy atual, a Edge Function foi publicada pelo editor do painel do Supabase, com o `handler.ts` embutido no `index.ts`, porque o login da CLI não estava disponível. O caminho correto é `supabase functions deploy` num job de CI, a partir deste repositório.
 - **Projeto Supabase gratuito pausa após ~7 dias sem uso.** Se o site não carregar as faturas, o projeto precisa ser reativado no painel.

@@ -1,6 +1,7 @@
 import { ShieldAlert } from 'lucide-react';
 import type { Fatura } from '@/lib/types';
-import { formatBRL } from '@/lib/format';
+import { dataBRT, formatBRL } from '@/lib/format';
+import { diasEntre } from '@/lib/encargos';
 
 /** A partir de quantas parcelas atrasadas o cliente é tratado como inadimplente. */
 export const PARCELAS_INADIMPLENCIA = 1;
@@ -25,6 +26,32 @@ export function SeloInadimplente() {
 }
 
 export const textoDiasAtraso = (dias: number) => (dias === 1 ? 'há 1 dia' : `há ${dias} dias`);
+const textoDias = (dias: number) => (dias === 1 ? '1 dia' : `${dias} dias`);
+
+/** Dias entre o vencimento e a data (em Brasília) em que a fatura foi paga; 0 se paga em dia. */
+export const diasAtrasoNoPagamento = (f: Fatura) =>
+  f.status === 'pago' && f.pago_em ? Math.max(0, diasEntre(f.vencimento, dataBRT(f.pago_em))) : 0;
+
+/** Fatura paga: o selo "Inadimplente" some, mas fica registrado que o pagamento atrasou. */
+export function ObsPagoComAtraso({ fatura }: { fatura: Fatura }) {
+  const dias = diasAtrasoNoPagamento(fatura);
+  if (dias <= 0) return null;
+  return (
+    <p className="mt-1 text-xs font-semibold text-warning-foreground/80">
+      <span className="rounded bg-warning/20 px-1.5 py-0.5">Pago com {textoDias(dias)} de atraso</span>
+    </p>
+  );
+}
+
+/** Divisão dos encargos por escrito (no celular não há "passar o mouse"). */
+export function DetalheEncargos({ fatura: f }: { fatura: Fatura }) {
+  if (f.dias_atraso <= 0) return null;
+  return (
+    <p className="text-xs text-foreground/60">
+      Multa 2%: {formatBRL(f.multa)} · Juros 1% a.m. ({textoDias(f.dias_atraso)}): {formatBRL(f.juros)}
+    </p>
+  );
+}
 
 /** Valor original + linha com o valor atualizado (multa + juros), só para faturas atrasadas. */
 export function ValorComEncargos({ fatura: f, alinhar = 'right' }: { fatura: Fatura; alinhar?: 'right' | 'left' }) {
@@ -41,7 +68,7 @@ export function ValorComEncargos({ fatura: f, alinhar = 'right' }: { fatura: Fat
     );
   }
   if (f.dias_atraso <= 0) return <>{formatBRL(f.valor)}</>;
-  const detalhe = `Multa 2%: ${formatBRL(f.multa)} · Juros 1% a.m. (${f.dias_atraso} ${f.dias_atraso === 1 ? 'dia' : 'dias'}): ${formatBRL(f.juros)}`;
+  const detalhe = `Multa 2%: ${formatBRL(f.multa)} · Juros 1% a.m. (${textoDias(f.dias_atraso)}): ${formatBRL(f.juros)}`;
   return (
     <span className={`inline-flex flex-col ${lado}`}>
       <span>{formatBRL(f.valor)}</span>
