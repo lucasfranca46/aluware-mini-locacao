@@ -1,0 +1,10 @@
+project_id = "aluware-mini-locacao"
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]
+
+# O gateway (Asaas) não envia JWT do Supabase; a autenticação do webhook é
+# feita pelo header `asaas-access-token` (secret WEBHOOK_TOKEN).
+[functions.webhook-pagamento]
+verify_jwt = false

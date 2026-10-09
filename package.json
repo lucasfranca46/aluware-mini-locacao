@@ -1,0 +1,13 @@
+{
+  "name": "aluware-mini-locacao",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/db.test.mjs tests/webhook.test.mjs",
+    "dev": "npm --prefix web run dev",
+    "build": "npm --prefix web run build"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.3.0"
+  }
+}

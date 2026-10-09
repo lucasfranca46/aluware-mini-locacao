@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Paleta extraída de alugomotos.com.br */
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 205 100% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 205 100% 12%;
+    --primary: 200 100% 50%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 200 100% 75%;
+    --secondary: 205 100% 12%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 200 100% 95%;
+    --muted-foreground: 212 100% 40%;
+    --accent: 200 100% 75%;
+    --accent-foreground: 205 100% 12%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 152 69% 38%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 26 90% 20%;
+    --border: 200 100% 90%;
+    --input: 200 100% 90%;
+    --ring: 200 100% 50%;
+    --radius: 0.75rem;
+
+    --azul: 200 100% 50%;
+    --azul-claro: 200 100% 75%;
+    --azul-escuro: 212 100% 21%;
+    --azul-marinho: 205 100% 12%;
+
+    --gradient-primary: linear-gradient(135deg, hsl(200 100% 50%), hsl(200 100% 75%));
+    --gradient-dark: linear-gradient(135deg, hsl(205 100% 12%), hsl(212 100% 21%));
+    --shadow-elegant: 0 10px 40px -10px hsl(200 100% 50% / 0.3);
+    --shadow-glow: 0 0 60px hsl(200 100% 75% / 0.5);
+  }
+
+  * { @apply border-border; }
+  body { @apply bg-muted/40 text-foreground font-sans antialiased; }
+}
