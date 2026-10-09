@@ -8,6 +8,8 @@ Rotina de locação de motos: o **banco gera as faturas semanais** ao ativar um 
 
 ![Tela de faturas: cards de resumo, filtros e faturas atrasadas com encargos](docs/tela.jpg)
 
+📄 **[Apresentação do sistema para o cliente](docs/APRESENTACAO.md)**: objetivo, funcionalidades, valor para o negócio e próximos passos.
+
 ## Resumo para quem avalia
 
 ### Como testar em 2 minutos (no site)
