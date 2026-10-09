@@ -178,3 +178,13 @@ test('papel anon (chave pública do site) lê a vw_faturas, mas não CPF/e-mail/
   await assert.rejects(db.query(`update faturas set status = 'pago'`), /permission denied/);
   await db.exec('reset role');
 });
+
+test('vw_faturas expõe modelo e placa separados (filtros da tela)', async () => {
+  const db = await novoBanco();
+  await db.exec('set role anon');
+  const { rows } = await db.query(`select modelo, placa, veiculo from vw_faturas where placa = 'FAB1C23'`);
+  await db.exec('reset role');
+  assert.equal(rows.length, 4);
+  assert.equal(rows[0].modelo, 'Dafra DK 160');
+  assert.equal(rows[0].veiculo, 'Dafra DK 160 · FAB1C23');
+});

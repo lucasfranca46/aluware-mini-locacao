@@ -14,7 +14,7 @@ export async function listarFaturas(): Promise<Fatura[]> {
 
   const { data, error } = await supabase
     .from('vw_faturas')
-    .select('id, codigo, parcela, total_parcelas, cliente, veiculo, vencimento, valor, status, pago_em')
+    .select('id, codigo, parcela, total_parcelas, cliente, veiculo, modelo, placa, vencimento, valor, status, pago_em')
     .order('vencimento')
     .order('codigo');
   if (error) throw error;

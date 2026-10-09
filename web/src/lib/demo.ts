@@ -14,7 +14,7 @@ const addDias = (iso: string, dias: number) => {
 };
 
 let seq = 0;
-function gerarFaturas(cliente: string, veiculo: string, valor: number, semanas: number, offsetInicio: number): FaturaDemo[] {
+function gerarFaturas(cliente: string, modelo: string, placa: string, valor: number, semanas: number, offsetInicio: number): FaturaDemo[] {
   const inicio = addDias(hojeBRT(), offsetInicio);
   return Array.from({ length: semanas }, (_, i) => {
     seq += 1;
@@ -24,7 +24,9 @@ function gerarFaturas(cliente: string, veiculo: string, valor: number, semanas: 
       parcela: i + 1,
       total_parcelas: semanas,
       cliente,
-      veiculo,
+      veiculo: `${modelo} · ${placa}`,
+      modelo,
+      placa,
       vencimento: addDias(inicio, 7 * (i + 1)),
       valor,
       status: 'pendente',
@@ -34,9 +36,9 @@ function gerarFaturas(cliente: string, veiculo: string, valor: number, semanas: 
 }
 
 const faturas: FaturaDemo[] = [
-  ...gerarFaturas('Carlos Henrique Souza', 'Dafra DK 160 · FAB1C23', 400, 4, -21),
-  ...gerarFaturas('Juliana Ferreira', 'Dafra DK 160 · GHI4J56', 389.9, 4, -3),
-  ...gerarFaturas('Rafael Lima', 'Dafra DK 160 · KLM7N89', 429.9, 2, 0),
+  ...gerarFaturas('Carlos Henrique Souza', 'Dafra DK 160', 'FAB1C23', 400, 4, -21),
+  ...gerarFaturas('Juliana Ferreira', 'Dafra DK 160', 'GHI4J56', 389.9, 4, -3),
+  ...gerarFaturas('Rafael Lima', 'Dafra DK 160', 'KLM7N89', 429.9, 2, 0),
 ];
 
 const latencia = () => new Promise((r) => setTimeout(r, 350 + Math.random() * 300));

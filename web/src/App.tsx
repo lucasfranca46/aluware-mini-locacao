@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, CheckCircle2, CircleSlash, Clock, FlaskConical, RefreshCw, Search, Webhook, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, CircleSlash, Clock, FlaskConical, RefreshCw, Webhook } from 'lucide-react';
 import { enviarWebhook, listarFaturas, modoDemo } from '@/lib/api';
 import { formatBRL, formatData, formatDataHoraBRT } from '@/lib/format';
 import type { Fatura, StatusFatura } from '@/lib/types';
 import { StatusBadge } from '@/components/StatusBadge';
 import { AcoesFatura } from '@/components/AcoesFatura';
 import { useToast } from '@/components/Toaster';
+import { aplicarFiltros, FILTROS_VAZIOS, FiltrosFaturas, temFiltro, type Filtros } from '@/components/FiltrosFaturas';
 
 type Filtro = 'todas' | StatusFatura;
-
-const normalizar = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const FILTROS: { id: Filtro; label: string }[] = [
   { id: 'todas', label: 'Todas' },
   { id: 'pendente', label: 'Pendentes' },
@@ -23,7 +22,7 @@ export default function App() {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<Filtro>('todas');
-  const [busca, setBusca] = useState('');
+  const [filtros, setFiltros] = useState<Filtros>(FILTROS_VAZIOS);
   const [processando, setProcessando] = useState<Set<string>>(new Set());
   const [recemPagas, setRecemPagas] = useState<Set<string>>(new Set());
 
@@ -97,26 +96,21 @@ export default function App() {
     }
   };
 
-  // Filtro por cliente: casa nome ou placa, sem diferenciar maiúsculas/acentos.
-  // Os cards de resumo seguem esse filtro; o filtro de status afeta só a lista.
-  const clientes = useMemo(() => [...new Set(faturas.map((f) => f.cliente))].sort((a, b) => a.localeCompare(b, 'pt-BR')), [faturas]);
-  const daBusca = useMemo(() => {
-    const termo = normalizar(busca.trim());
-    if (!termo) return faturas;
-    return faturas.filter((f) => normalizar(f.cliente).includes(termo) || normalizar(f.veiculo).includes(termo));
-  }, [faturas, busca]);
+  // Filtros de cliente/placa/veículo valem para a lista e para os cards de resumo;
+  // o filtro de status (abas) afeta só a lista.
+  const filtradas = useMemo(() => aplicarFiltros(faturas, filtros), [faturas, filtros]);
 
   const resumo = useMemo(() => {
-    const soma = (st: StatusFatura) => daBusca.filter((f) => f.status === st);
+    const soma = (st: StatusFatura) => filtradas.filter((f) => f.status === st);
     const total = (fs: Fatura[]) => fs.reduce((acc, f) => acc + f.valor, 0);
     return {
       pendente: { qtd: soma('pendente').length, valor: total(soma('pendente')) },
       atrasado: { qtd: soma('atrasado').length, valor: total(soma('atrasado')) },
       pago: { qtd: soma('pago').length, valor: total(soma('pago')) },
     };
-  }, [daBusca]);
+  }, [filtradas]);
 
-  const visiveis = filtro === 'todas' ? daBusca : daBusca.filter((f) => f.status === filtro);
+  const visiveis = filtro === 'todas' ? filtradas : filtradas.filter((f) => f.status === filtro);
 
   return (
     <div className="min-h-screen pb-16">
@@ -178,30 +172,6 @@ export default function App() {
               <h2 className="font-bold">Faturas</h2>
               <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">{visiveis.length}</span>
             </div>
-            <div className="relative w-full sm:w-64 md:order-none">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground/40" aria-hidden />
-              <input
-                type="search"
-                value={busca}
-                onChange={(e) => setBusca(e.target.value)}
-                list="lista-clientes"
-                placeholder="Buscar cliente ou placa"
-                aria-label="Filtrar faturas por cliente ou placa"
-                className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-9 text-sm outline-none transition-all placeholder:text-foreground/40 focus:border-primary focus:ring-2 focus:ring-primary/20 [&::-webkit-search-cancel-button]:hidden"
-              />
-              <datalist id="lista-clientes">
-                {clientes.map((c) => <option key={c} value={c} />)}
-              </datalist>
-              {busca && (
-                <button
-                  onClick={() => setBusca('')}
-                  aria-label="Limpar filtro de cliente"
-                  className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-foreground/40 hover:bg-muted hover:text-foreground"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
-            </div>
             <div className="flex gap-1 overflow-x-auto rounded-xl bg-muted/60 p-1">
               {FILTROS.map((f) => (
                 <button
@@ -218,6 +188,8 @@ export default function App() {
             </div>
           </div>
 
+          <FiltrosFaturas faturas={faturas} valor={filtros} onChange={setFiltros} />
+
           {carregando && faturas.length === 0 ? (
             <div className="flex justify-center py-20">
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
@@ -229,10 +201,10 @@ export default function App() {
             </div>
           ) : visiveis.length === 0 ? (
             <div className="p-10 text-center text-sm text-foreground/60">
-              <p>{busca ? `Nenhuma fatura encontrada para “${busca}”.` : 'Nenhuma fatura neste filtro.'}</p>
-              {busca && (
-                <button onClick={() => setBusca('')} className="mt-2 font-semibold text-primary hover:underline">
-                  Limpar filtro de cliente
+              <p>Nenhuma fatura encontrada com esses filtros.</p>
+              {temFiltro(filtros) && (
+                <button onClick={() => setFiltros(FILTROS_VAZIOS)} className="mt-2 font-semibold text-primary hover:underline">
+                  Limpar filtros
                 </button>
               )}
             </div>

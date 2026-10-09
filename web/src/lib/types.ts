@@ -6,7 +6,9 @@ export interface Fatura {
   parcela: number;
   total_parcelas: number;
   cliente: string;
-  veiculo: string;
+  veiculo: string; // "modelo · placa"
+  modelo: string;
+  placa: string;
   vencimento: string; // YYYY-MM-DD
   valor: number;
   status: StatusFatura;
