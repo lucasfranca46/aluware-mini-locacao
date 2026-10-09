@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Bike, CheckCircle2, CircleSlash, Clock, FlaskConical, RefreshCw, Webhook } from 'lucide-react';
+import { AlertCircle, CheckCircle2, CircleSlash, Clock, FlaskConical, RefreshCw, Search, Webhook, X } from 'lucide-react';
 import { enviarWebhook, listarFaturas, modoDemo } from '@/lib/api';
 import { formatBRL, formatData, formatDataHoraBRT } from '@/lib/format';
 import type { Fatura, StatusFatura } from '@/lib/types';
@@ -8,6 +8,8 @@ import { AcoesFatura } from '@/components/AcoesFatura';
 import { useToast } from '@/components/Toaster';
 
 type Filtro = 'todas' | StatusFatura;
+
+const normalizar = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const FILTROS: { id: Filtro; label: string }[] = [
   { id: 'todas', label: 'Todas' },
   { id: 'pendente', label: 'Pendentes' },
@@ -21,6 +23,7 @@ export default function App() {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<Filtro>('todas');
+  const [busca, setBusca] = useState('');
   const [processando, setProcessando] = useState<Set<string>>(new Set());
   const [recemPagas, setRecemPagas] = useState<Set<string>>(new Set());
 
@@ -94,17 +97,26 @@ export default function App() {
     }
   };
 
+  // Filtro por cliente: casa nome ou placa, sem diferenciar maiúsculas/acentos.
+  // Os cards de resumo seguem esse filtro; o filtro de status afeta só a lista.
+  const clientes = useMemo(() => [...new Set(faturas.map((f) => f.cliente))].sort((a, b) => a.localeCompare(b, 'pt-BR')), [faturas]);
+  const daBusca = useMemo(() => {
+    const termo = normalizar(busca.trim());
+    if (!termo) return faturas;
+    return faturas.filter((f) => normalizar(f.cliente).includes(termo) || normalizar(f.veiculo).includes(termo));
+  }, [faturas, busca]);
+
   const resumo = useMemo(() => {
-    const soma = (st: StatusFatura) => faturas.filter((f) => f.status === st);
+    const soma = (st: StatusFatura) => daBusca.filter((f) => f.status === st);
     const total = (fs: Fatura[]) => fs.reduce((acc, f) => acc + f.valor, 0);
     return {
       pendente: { qtd: soma('pendente').length, valor: total(soma('pendente')) },
       atrasado: { qtd: soma('atrasado').length, valor: total(soma('atrasado')) },
       pago: { qtd: soma('pago').length, valor: total(soma('pago')) },
     };
-  }, [faturas]);
+  }, [daBusca]);
 
-  const visiveis = filtro === 'todas' ? faturas : faturas.filter((f) => f.status === filtro);
+  const visiveis = filtro === 'todas' ? daBusca : daBusca.filter((f) => f.status === filtro);
 
   return (
     <div className="min-h-screen pb-16">
@@ -113,14 +125,12 @@ export default function App() {
         <div className="absolute -left-20 top-0 h-80 w-80 rounded-full bg-azul-claro/20 blur-3xl" />
         <div className="container relative">
           <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 backdrop-blur-sm ring-1 ring-white/20">
-                <Bike className="h-6 w-6 text-accent" />
+            <div className="flex items-center gap-4">
+              {/* Selo branco: o "GO" do logo é azul-marinho e sumiria no fundo escuro. */}
+              <div className="rounded-xl bg-white px-3 py-2 shadow-elegant">
+                <img src="/logo-alugo.png" alt="Alu.GO Motos" className="h-8 w-auto md:h-9" />
               </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-widest text-accent">Mini-Locação</p>
-                <p className="text-sm text-white/70">Gestão de faturas semanais</p>
-              </div>
+              <p className="hidden border-l border-white/20 pl-4 text-sm text-white/70 sm:block">Gestão de faturas semanais</p>
             </div>
             {modoDemo && (
               <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold backdrop-blur-sm">
@@ -168,6 +178,30 @@ export default function App() {
               <h2 className="font-bold">Faturas</h2>
               <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">{visiveis.length}</span>
             </div>
+            <div className="relative w-full sm:w-64 md:order-none">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground/40" aria-hidden />
+              <input
+                type="search"
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                list="lista-clientes"
+                placeholder="Buscar cliente ou placa"
+                aria-label="Filtrar faturas por cliente ou placa"
+                className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-9 text-sm outline-none transition-all placeholder:text-foreground/40 focus:border-primary focus:ring-2 focus:ring-primary/20 [&::-webkit-search-cancel-button]:hidden"
+              />
+              <datalist id="lista-clientes">
+                {clientes.map((c) => <option key={c} value={c} />)}
+              </datalist>
+              {busca && (
+                <button
+                  onClick={() => setBusca('')}
+                  aria-label="Limpar filtro de cliente"
+                  className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-foreground/40 hover:bg-muted hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
             <div className="flex gap-1 overflow-x-auto rounded-xl bg-muted/60 p-1">
               {FILTROS.map((f) => (
                 <button
@@ -194,7 +228,14 @@ export default function App() {
               <p className="mt-1 text-sm text-foreground/60">{erro}</p>
             </div>
           ) : visiveis.length === 0 ? (
-            <p className="p-10 text-center text-sm text-foreground/60">Nenhuma fatura neste filtro.</p>
+            <div className="p-10 text-center text-sm text-foreground/60">
+              <p>{busca ? `Nenhuma fatura encontrada para “${busca}”.` : 'Nenhuma fatura neste filtro.'}</p>
+              {busca && (
+                <button onClick={() => setBusca('')} className="mt-2 font-semibold text-primary hover:underline">
+                  Limpar filtro de cliente
+                </button>
+              )}
+            </div>
           ) : (
             <>
               {/* Desktop */}
