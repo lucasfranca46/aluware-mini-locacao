@@ -4,21 +4,56 @@
 
 Rotina de locação de motos: o **banco gera as faturas semanais** ao ativar um contrato, e um **webhook idempotente** liquida a fatura quando o Pix é confirmado, gravando a baixa no fuso de Brasília.
 
+**🔗 [aluware-mini-locacao.vercel.app](https://aluware-mini-locacao.vercel.app)** · Webhook: `POST https://uujgutwvdmbxrtzqprwh.supabase.co/functions/v1/webhook-pagamento`
+
+![Tela de faturas: cards de resumo, filtros e faturas atrasadas com encargos](docs/tela.jpg)
+
+## Resumo para quem avalia
+
+### Como testar em 2 minutos (no site)
+
+1. **Simular pagamento** numa fatura **em dia**: a linha vira *Pago* na hora, com o horário de Brasília.
+2. **Simular pagamento** numa fatura **atrasada**: o valor enviado já inclui multa e juros (ex.: R$ 400,00 → R$ 409,87), e a fatura fica marcada "Pago com N dias de atraso".
+3. **Reenviar webhook** na fatura paga: responde **200** "já estava paga" e não duplica nada (**idempotência**).
+4. **⊘** em qualquer fatura em aberto: simula um Pix com valor errado e recebe **422** (valor divergente). A fatura continua em aberto.
+5. **Resetar dados de teste** (no topo): recria o cenário para testar de novo.
+
+A linha pequena e cinza nas notificações (`HTTP 200 · idempotente`) existe para facilitar a avaliação. [Por que ela aparece](#mensagens-técnicas-na-tela-decisão-consciente).
+
+### O que o desafio pedia
+
+| Requisito | Onde | |
+|---|---|---|
+| Tabelas `clientes`, `veiculos`, `contratos`, `faturas` | [migration inicial](supabase/migrations/20261009000000_mini_locacao.sql) | ✅ |
+| Contrato `ativo` gera as faturas semanais por **trigger** | `trg_contratos_gerar_faturas` | ✅ |
+| Fatura paga não pode ser cancelada nem mudar de valor | `trg_faturas_proteger_paga` + constraint | ✅ |
+| Webhook `{ fatura_id, valor_pago, evento }` em TypeScript | [Edge Function](supabase/functions/webhook-pagamento) | ✅ |
+| Valor recebido precisa coincidir com o da fatura | `liquidar_fatura` → **422** se divergir | ✅ |
+| Baixa atômica com data/hora em `America/Sao_Paulo` | `SELECT … FOR UPDATE` + `pago_em_brt` | ✅ |
+| **Idempotência**: reenvio responde 200 sem duplicar | testado inclusive com 5 envios **simultâneos** | ✅ |
+| Tela com Código, Cliente, Vencimento, Valor e Status (Pendente/Pago/Atrasado) | React + TS + Tailwind | ✅ |
+| Botão "Simular Notificação de Pagamento" com feedback imediato | linha atualiza na hora + notificação | ✅ |
+| README + deploy (Supabase + Vercel) | este arquivo + links acima | ✅ |
+
+### O que foi além
+
+| Extra | Por quê |
+|---|---|
+| **Multa 2% + juros 1% a.m.**: fatura atrasada é paga com encargos, calculados no banco por uma única função | Regra financeira real, sem divergência entre tela e banco |
+| **Gestão de atraso**: dias em atraso, selo *Inadimplente*, cobrança no **WhatsApp** com mensagem pronta, "Pago com N dias de atraso" | É o problema do dia a dia de uma locadora |
+| **Formato Asaas** no mesmo webhook, com token `asaas-access-token` obrigatório | Pronto para um gateway real |
+| **Leitura pública mínima**: a chave pública não lê CPF, e-mail nem telefone | LGPD |
+| **Filtros** por cliente, placa e veículo; aba *Pagas* do mais recente para o mais antigo | Uso real da tela |
+| **Botão de reset** dos dados de demonstração (limite de 1 a cada 30 s) | O avaliador sempre encontra o que testar |
+| **30 testes** contra um Postgres real (PGlite) + **CI** no GitHub Actions | Regras garantidas por teste, não só por leitura |
+| Identidade visual da **Alu.GO** (logo, cores e fonte do site oficial) | Cara de produto do cliente |
+
 | Camada | Stack | Onde |
 |---|---|---|
-| Banco | PostgreSQL (Supabase) — tabelas, triggers, constraints, função de liquidação | [`supabase/migrations/`](supabase/migrations/20261009000000_mini_locacao.sql) |
+| Banco | PostgreSQL (Supabase): tabelas, triggers, constraints, funções | [`supabase/migrations/`](supabase/migrations) |
 | Backend | Supabase Edge Function (Deno + TypeScript) | [`supabase/functions/webhook-pagamento/`](supabase/functions/webhook-pagamento) |
 | Frontend | React + TypeScript + Tailwind (Vite) | [`web/`](web) |
 | Testes | `node:test` + PGlite (Postgres real em WASM) | [`tests/`](tests) |
-
----
-
-## Deploy
-
-| | Link |
-|---|---|
-| Frontend (Vercel) | https://aluware-mini-locacao.vercel.app |
-| Webhook (Supabase Edge Function) | `POST https://uujgutwvdmbxrtzqprwh.supabase.co/functions/v1/webhook-pagamento` |
 
 ---
 
