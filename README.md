@@ -204,7 +204,7 @@ Faturas atrasadas são o problema real de uma locadora, então a tela vai além 
 - **Encargos calculados no banco** (migration [`20261009000300_encargos_atraso.sql`](supabase/migrations/20261009000300_encargos_atraso.sql)): multa de **2%** + juros de mora de **1% ao mês** *pro rata die*. A `vw_faturas` entrega `dias_atraso`, `multa`, `juros` e `valor_atualizado`, e o card "Em atraso" mostra o total com encargos. Os valores ficam na view, como o status `atrasado`, porque mudam todo dia e assim não precisam de job.
 - **Os encargos são informativos.** O enunciado exige que o valor pago coincida com o valor da fatura, então a liquidação continua exigindo o **valor original**. Num cenário real, a cobrança Pix seria reemitida com o valor atualizado.
 - **Cobrar no WhatsApp:** botão com mensagem pronta (nome, parcela, moto, placa, vencimento, dias em atraso e valor atualizado). O link `wa.me` abre o WhatsApp para escolher o contato, então o telefone do cliente não precisa sair do banco.
-- **Selo "Inadimplente":** cliente com 2 ou mais parcelas atrasadas. A dica sugere avaliar o bloqueio da moto pelo rastreador, prática comum no setor.
+- **Selo "Inadimplente":** aparece nas faturas **atrasadas** de clientes com 2 ou mais parcelas em atraso. Faturas pagas ou a vencer do mesmo cliente não recebem o selo. A dica sugere avaliar o bloqueio da moto pelo rastreador, prática comum no setor.
 
 ### Dados de demonstração e botão "Resetar dados de teste"
 

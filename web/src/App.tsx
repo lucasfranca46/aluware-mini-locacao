@@ -246,7 +246,7 @@ export default function App() {
                       <td className="px-4 py-4">
                         <p className="flex flex-wrap items-center gap-1.5 font-semibold">
                           {f.cliente}
-                          {inadimplentes.has(f.cliente) && <SeloInadimplente />}
+                          {f.status === 'atrasado' && inadimplentes.has(f.cliente) && <SeloInadimplente />}
                         </p>
                         <p className="text-xs text-foreground/50">{f.veiculo}</p>
                       </td>
@@ -278,7 +278,7 @@ export default function App() {
                         </p>
                         <p className="flex flex-wrap items-center gap-1.5 font-semibold">
                           <span className="truncate">{f.cliente}</span>
-                          {inadimplentes.has(f.cliente) && <SeloInadimplente />}
+                          {f.status === 'atrasado' && inadimplentes.has(f.cliente) && <SeloInadimplente />}
                         </p>
                       </div>
                       <StatusBadge status={f.status} animar={recemPagas.has(f.id)} />
