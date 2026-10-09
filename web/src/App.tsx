@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, CheckCircle2, CircleSlash, Clock, FlaskConical, RefreshCw, Webhook } from 'lucide-react';
 import { enviarWebhook, listarFaturas, modoDemo } from '@/lib/api';
 import { formatBRL, formatData, formatDataHoraBRT } from '@/lib/format';
@@ -28,14 +28,22 @@ export default function App() {
   const [processando, setProcessando] = useState<Set<string>>(new Set());
   const [recemPagas, setRecemPagas] = useState<Set<string>>(new Set());
 
+  // Várias recargas podem estar em andamento (após um pagamento, após um reset).
+  // Só a mais recente pode atualizar a tela: uma resposta antiga que chegue por
+  // último não sobrescreve os dados novos.
+  const ultimaCarga = useRef(0);
   const carregar = useCallback(async () => {
+    const id = ++ultimaCarga.current;
     try {
+      const dados = await listarFaturas();
+      if (id !== ultimaCarga.current) return;
       setErro(null);
-      setFaturas(await listarFaturas());
+      setFaturas(dados);
     } catch (e) {
+      if (id !== ultimaCarga.current) return;
       setErro(e instanceof Error ? e.message : 'Erro ao carregar faturas');
     } finally {
-      setCarregando(false);
+      if (id === ultimaCarga.current) setCarregando(false);
     }
   }, []);
 

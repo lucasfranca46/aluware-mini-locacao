@@ -9,6 +9,14 @@ export function BotaoResetDemo({ onResetado }: { onResetado: () => void }) {
   const toast = useToast();
   const [armado, setArmado] = useState(false);
   const [executando, setExecutando] = useState(false);
+  // Segundos até o banco liberar outro reset (limite de 1 a cada 30 s).
+  const [espera, setEspera] = useState(0);
+
+  useEffect(() => {
+    if (espera <= 0) return;
+    const t = setTimeout(() => setEspera((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [espera]);
 
   useEffect(() => {
     if (!armado) return;
@@ -17,12 +25,14 @@ export function BotaoResetDemo({ onResetado }: { onResetado: () => void }) {
   }, [armado]);
 
   const clicar = async () => {
+    if (espera > 0) return;
     if (!armado) return setArmado(true);
     setArmado(false);
     setExecutando(true);
     try {
       const r = await resetarDemo();
       if (r.resultado === 'aguarde') {
+        setEspera(r.segundos);
         toast({
           tipo: 'info',
           titulo: 'Os dados acabaram de ser recriados',
@@ -35,6 +45,7 @@ export function BotaoResetDemo({ onResetado }: { onResetado: () => void }) {
           titulo: 'Dados de teste recriados',
           descricao: `${r.faturas} faturas: atrasadas, inadimplentes, a vencer e pagas. Pode testar de novo.`,
         });
+        setEspera(30);
         onResetado();
       }
     } catch (e) {
@@ -52,14 +63,14 @@ export function BotaoResetDemo({ onResetado }: { onResetado: () => void }) {
   return (
     <button
       onClick={clicar}
-      disabled={executando}
-      title="Apaga os pagamentos de teste e recria o cenário inicial"
+      disabled={executando || espera > 0}
+      title={espera > 0 ? 'O banco libera um novo reset a cada 30 segundos' : 'Apaga os pagamentos de teste e recria o cenário inicial'}
       className={`inline-flex items-center gap-2 rounded-full border-2 px-5 py-2.5 text-sm font-semibold backdrop-blur-sm transition-all disabled:opacity-60 ${
         armado ? 'border-warning bg-warning text-warning-foreground' : 'border-white/30 hover:bg-white/10'
       }`}
     >
       {executando ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
-      {armado ? 'Clique de novo para confirmar' : 'Resetar dados de teste'}
+      {espera > 0 ? `Resetar de novo em ${espera} s` : armado ? 'Clique de novo para confirmar' : 'Resetar dados de teste'}
     </button>
   );
 }
