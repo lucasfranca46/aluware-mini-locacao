@@ -11,6 +11,15 @@ Rotina de locação de motos: o **banco gera as faturas semanais** ao ativar um 
 
 ---
 
+## Deploy
+
+| | Link |
+|---|---|
+| Frontend (Vercel) | https://aluware-mini-locacao.vercel.app |
+| Webhook (Supabase Edge Function) | `POST https://uujgutwvdmbxrtzqprwh.supabase.co/functions/v1/webhook-pagamento` |
+
+---
+
 ## Rodando localmente
 
 ### 1. Só o frontend (modo demonstração — 1 minuto)
