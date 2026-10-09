@@ -14,7 +14,10 @@ export type Liquidar = (faturaId: string, valorPago: number) => Promise<Record<s
 
 export interface HandlerDeps {
   liquidar: Liquidar;
-  /** Se definido, exige o header `asaas-access-token` igual a este valor. */
+  /**
+   * Token que o Asaas envia no header `asaas-access-token`. Obrigatório para
+   * payloads no formato Asaas; sem ele configurado, esse formato é recusado.
+   */
   webhookToken?: string;
   log?: (msg: string, extra?: Record<string, unknown>) => void;
 }
@@ -43,6 +46,10 @@ const HTTP_POR_RESULTADO: Record<ResultadoLiquidacao, number> = {
   cancelada: 409,
 };
 
+// Eventos do Asaas que significam "dinheiro recebido". Pix gera PAYMENT_RECEIVED;
+// cartão gera PAYMENT_CONFIRMED.
+const EVENTOS_ASAAS_PAGO = new Set(['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED']);
+
 function tokensIguais(a: string, b: string) {
   if (a.length !== b.length) return false;
   let diff = 0;
@@ -50,15 +57,27 @@ function tokensIguais(a: string, b: string) {
   return diff === 0;
 }
 
+type Entrada =
+  | { formato: 'simulacao'; evento: unknown; fatura_id: unknown; valor_pago: unknown }
+  | { formato: 'asaas'; evento: unknown; fatura_id: unknown; valor_pago: unknown; payment_id: unknown };
+
+// Aceita dois formatos na mesma URL:
+//   simulação (enunciado do desafio): { fatura_id, valor_pago, evento }
+//   Asaas (gateway real):             { event, payment: { id, value, externalReference } }
+// No Asaas, a cobrança é criada com externalReference = id da fatura.
+function normalizar(body: Record<string, unknown>): Entrada {
+  const payment = body.payment;
+  if (typeof body.event === 'string' && payment && typeof payment === 'object') {
+    const p = payment as Record<string, unknown>;
+    return { formato: 'asaas', evento: body.event, fatura_id: p.externalReference, valor_pago: p.value, payment_id: p.id };
+  }
+  return { formato: 'simulacao', evento: body.evento, fatura_id: body.fatura_id, valor_pago: body.valor_pago };
+}
+
 export function createHandler({ liquidar, webhookToken, log = () => {} }: HandlerDeps) {
   return async (req: Request): Promise<Response> => {
     if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
     if (req.method !== 'POST') return json(405, { erro: 'Método não permitido' });
-
-    if (webhookToken) {
-      const recebido = req.headers.get('asaas-access-token') ?? '';
-      if (!tokensIguais(recebido, webhookToken)) return json(401, { erro: 'Token do webhook inválido' });
-    }
 
     let body: unknown;
     try {
@@ -67,25 +86,47 @@ export function createHandler({ liquidar, webhookToken, log = () => {} }: Handle
       return json(400, { erro: 'JSON inválido' });
     }
 
-    const { fatura_id, valor_pago, evento } = (body ?? {}) as Record<string, unknown>;
+    const entrada = normalizar((body ?? {}) as Record<string, unknown>);
+    const { formato, evento, fatura_id, valor_pago } = entrada;
+
+    // O token protege o formato do gateway. A simulação fica aberta de propósito:
+    // ela é chamada pelo navegador, e um token embutido no frontend seria público.
+    if (formato === 'asaas') {
+      if (!webhookToken) return json(503, { erro: 'Integração Asaas não configurada (WEBHOOK_TOKEN ausente)' });
+      const recebido = req.headers.get('asaas-access-token') ?? '';
+      if (!tokensIguais(recebido, webhookToken)) return json(401, { erro: 'Token do webhook inválido' });
+    }
 
     // Gateways enviam vários tipos de evento para a mesma URL. Eventos que não
     // tratamos recebem 200 para não entrarem em fila de reenvio.
-    if (evento !== 'PAYMENT_RECEIVED') {
-      log('evento ignorado', { evento });
+    const eventoDePagamento = formato === 'asaas'
+      ? typeof evento === 'string' && EVENTOS_ASAAS_PAGO.has(evento)
+      : evento === 'PAYMENT_RECEIVED';
+    if (!eventoDePagamento) {
+      log('evento ignorado', { formato, evento });
       return json(200, { resultado: 'ignorado', evento });
     }
 
+    const campoFatura = formato === 'asaas' ? 'payment.externalReference' : 'fatura_id';
+    const campoValor = formato === 'asaas' ? 'payment.value' : 'valor_pago';
     if (typeof fatura_id !== 'string' || !UUID_RE.test(fatura_id)) {
-      return json(400, { erro: 'fatura_id deve ser um UUID' });
+      return json(400, { erro: `${campoFatura} deve ser um UUID` });
     }
     if (typeof valor_pago !== 'number' || !Number.isFinite(valor_pago) || valor_pago <= 0) {
-      return json(400, { erro: 'valor_pago deve ser um número positivo' });
+      return json(400, { erro: `${campoValor} deve ser um número positivo` });
     }
 
     try {
       const r = await liquidar(fatura_id, valor_pago);
-      log('webhook processado', { fatura_id, valor_pago, resultado: r.resultado });
+      const extra = entrada.formato === 'asaas' ? { asaas_payment_id: entrada.payment_id } : {};
+      log('webhook processado', { formato, fatura_id, valor_pago, resultado: r.resultado, ...extra });
+
+      // O Asaas reenvia tudo que não for 200 e pausa a fila depois de várias
+      // falhas seguidas. Recusas definitivas (valor divergente, fatura
+      // inexistente ou cancelada) não melhoram com reenvio: respondemos 200 com
+      // o resultado no corpo e deixamos o caso registrado no log para conciliação.
+      if (formato === 'asaas') return json(200, { ...r, ...extra });
+
       return json(HTTP_POR_RESULTADO[r.resultado] ?? 500, r);
     } catch (e) {
       log('erro ao liquidar', { fatura_id, erro: String(e) });

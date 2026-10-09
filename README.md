@@ -59,8 +59,13 @@ npm test
 ✔ fatura inexistente -> 404
 ✔ payload inválido -> 400
 ✔ outros eventos são ignorados com 200
-✔ token do webhook é exigido quando configurado
-ℹ tests 18 · pass 18 · fail 0
+✔ simulação (formato do desafio) não exige token, mesmo com WEBHOOK_TOKEN configurado
+✔ Asaas: token é obrigatório e precisa estar configurado
+✔ Asaas: PAYMENT_RECEIVED com token certo liquida pela externalReference
+✔ Asaas: reenvio é idempotente e PAYMENT_CONFIRMED também conta como pago
+✔ Asaas: recusa definitiva responde 200 (sem reenvio) e não liquida
+✔ Asaas: outros eventos são ignorados e payload sem externalReference é 400
+ℹ tests 23 · pass 23 · fail 0
 ```
 
 ### 3. Stack completa com Supabase
@@ -71,7 +76,7 @@ npm test
 npx supabase login
 npx supabase link --project-ref <SEU_PROJECT_REF>
 npx supabase db push --include-seed            # migration + seed
-npx supabase secrets set WEBHOOK_TOKEN=<um-segredo>   # opcional
+npx supabase secrets set WEBHOOK_TOKEN=<um-segredo>   # só para receber o formato Asaas
 npx supabase functions deploy webhook-pagamento --no-verify-jwt
 ```
 
@@ -94,14 +99,26 @@ npm run dev
 
 ### Testando o webhook via cURL
 
+**Formato do desafio (simulação):**
+
 ```bash
 curl -i -X POST "$SUPABASE_URL/functions/v1/webhook-pagamento" \
   -H "Content-Type: application/json" \
-  -H "asaas-access-token: $WEBHOOK_TOKEN" \
   -d '{"fatura_id":"<uuid>","valor_pago":400.00,"evento":"PAYMENT_RECEIVED"}'
 ```
 
 Rode duas vezes: a primeira retorna `"resultado":"liquidada"`, a segunda `"resultado":"ja_processada"`. As duas retornam **200**.
+
+**Formato Asaas (como o gateway real envia):**
+
+```bash
+curl -i -X POST "$SUPABASE_URL/functions/v1/webhook-pagamento" \
+  -H "Content-Type: application/json" \
+  -H "asaas-access-token: $WEBHOOK_TOKEN" \
+  -d '{"event":"PAYMENT_RECEIVED","payment":{"id":"pay_123","value":400.00,"billingType":"PIX","externalReference":"<uuid-da-fatura>"}}'
+```
+
+Sem o header, ou com o token errado, a resposta é **401**. Se o `WEBHOOK_TOKEN` não estiver configurado na função, é **503**.
 
 ---
 
@@ -126,20 +143,39 @@ Toda a regra crítica fica em **uma função no banco**, `liquidar_fatura(fatura
 3. Se o valor não bate (comparação em centavos), retorna `valor_divergente` e o endpoint responde **422**. A fatura continua pendente.
 4. Caso contrário, faz `UPDATE` de status, `valor_pago`, `pago_em` e `pago_em_brt` de uma vez.
 
-A Edge Function só faz validação de entrada, autenticação e o mapeamento resultado → HTTP:
+A Edge Function só faz validação de entrada, autenticação e o mapeamento resultado → HTTP.
 
-| Situação | HTTP |
-|---|---|
-| Liquidada / já processada (reenvio) | 200 |
-| Evento diferente de `PAYMENT_RECEIVED` | 200 (ignorado, para não gerar retentativas) |
-| Payload inválido | 400 |
-| Token inválido (quando `WEBHOOK_TOKEN` está configurado) | 401 |
-| Fatura não encontrada | 404 |
-| Fatura cancelada | 409 |
-| Valor divergente | 422 |
-| Erro inesperado | 500 (o gateway reenvia, o que é seguro porque a operação é idempotente) |
+#### Dois formatos na mesma URL
 
-A função roda com `verify_jwt = false` porque o gateway não tem JWT do Supabase. A autenticação é feita pelo header `asaas-access-token`, como no Asaas, com comparação em tempo constante.
+| | Simulação (formato do desafio) | Asaas (gateway real) |
+|---|---|---|
+| Payload | `{ fatura_id, valor_pago, evento }` | `{ event, payment: { id, value, externalReference } }` |
+| Quem chama | botão "Simular pagamento" do site | servidor do Asaas |
+| Como acha a fatura | `fatura_id` | `payment.externalReference` (a cobrança é criada no Asaas com o id da fatura) |
+| Eventos que dão baixa | `PAYMENT_RECEIVED` | `PAYMENT_RECEIVED` (Pix) e `PAYMENT_CONFIRMED` (cartão) |
+| Token `asaas-access-token` | não exige | **obrigatório** |
+
+As duas entradas passam pela mesma `liquidar_fatura`, então as garantias de idempotência, atomicidade e fuso são idênticas.
+
+**Por que a simulação não exige token:** ela é chamada pelo navegador. Um token embutido no frontend vai parar no JavaScript público, e qualquer pessoa conseguiria copiá-lo. O token só protege de verdade quando fica guardado no servidor de quem chama, que é o caso do Asaas. Num sistema em produção, a rota de simulação não existiria.
+
+#### Respostas HTTP
+
+| Situação | Simulação | Asaas |
+|---|---|---|
+| Liquidada / já processada (reenvio) | 200 | 200 |
+| Evento que não é de pagamento | 200 (ignorado) | 200 (ignorado) |
+| Payload inválido | 400 | 400 |
+| Token ausente ou errado | — | 401 |
+| `WEBHOOK_TOKEN` não configurado | — | 503 |
+| Fatura não encontrada | 404 | 200 + `"resultado":"nao_encontrada"` |
+| Fatura cancelada | 409 | 200 + `"resultado":"cancelada"` |
+| Valor divergente | 422 | 200 + `"resultado":"valor_divergente"` |
+| Erro inesperado | 500 | 500 (o gateway reenvia, o que é seguro porque a operação é idempotente) |
+
+**Por que o Asaas recebe 200 nas recusas:** o Asaas reenvia todo webhook que não recebe 200 e, depois de várias falhas seguidas, pausa a fila de envios. Valor divergente, fatura inexistente ou fatura cancelada não se resolvem com reenvio. Então a resposta é 200, a fatura **não** é liquidada, o motivo vai no corpo e o caso fica registrado no log para conciliação. Só erro inesperado (500) provoca reenvio.
+
+A função roda com `verify_jwt = false` porque o gateway não tem JWT do Supabase. A autenticação do Asaas é feita pelo header `asaas-access-token`, com comparação em tempo constante.
 
 A lógica HTTP fica em `handler.ts`, sem dependências de runtime, e por isso os testes conseguem rodá-la em Node contra o Postgres real.
 

@@ -4,7 +4,6 @@ import * as demo from './demo';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-const WEBHOOK_TOKEN = import.meta.env.VITE_WEBHOOK_TOKEN as string | undefined;
 
 export const modoDemo = !SUPABASE_URL || !SUPABASE_ANON_KEY;
 
@@ -33,7 +32,6 @@ export async function enviarWebhook(faturaId: string, valorPago: number): Promis
       'Content-Type': 'application/json',
       apikey: SUPABASE_ANON_KEY!,
       Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      ...(WEBHOOK_TOKEN ? { 'asaas-access-token': WEBHOOK_TOKEN } : {}),
     },
     body: JSON.stringify(payload),
   });

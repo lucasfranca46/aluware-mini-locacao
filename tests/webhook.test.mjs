@@ -80,10 +80,70 @@ test('outros eventos são ignorados com 200', async () => {
   assert.equal(r.body.resultado, 'ignorado');
 });
 
-test('token do webhook é exigido quando configurado', async () => {
+test('simulação (formato do desafio) não exige token, mesmo com WEBHOOK_TOKEN configurado', async () => {
   const { call, fatura } = await setup({ webhookToken: 'segredo' });
-  const payload = { fatura_id: fatura.id, valor_pago: fatura.valor, evento: 'PAYMENT_RECEIVED' };
-  assert.equal((await call(payload)).status, 401);
-  assert.equal((await call(payload, { 'asaas-access-token': 'errado' })).status, 401);
-  assert.equal((await call(payload, { 'asaas-access-token': 'segredo' })).status, 200);
+  const r = await call({ fatura_id: fatura.id, valor_pago: fatura.valor, evento: 'PAYMENT_RECEIVED' });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.resultado, 'liquidada');
+});
+
+// ---------------------------------------------------------------------------
+// Formato Asaas: { event, payment: { id, value, externalReference } }
+// ---------------------------------------------------------------------------
+const asaas = (fatura, { event = 'PAYMENT_RECEIVED', value = fatura.valor } = {}) => ({
+  id: 'evt_1', event,
+  payment: { object: 'payment', id: 'pay_123', value, netValue: value - 1.99, billingType: 'PIX', externalReference: fatura.id },
+});
+const TOKEN = { 'asaas-access-token': 'segredo' };
+
+test('Asaas: token é obrigatório e precisa estar configurado', async () => {
+  const semConfig = await setup();
+  assert.equal((await semConfig.call(asaas(semConfig.fatura), TOKEN)).status, 503);
+
+  const { call, fatura } = await setup({ webhookToken: 'segredo' });
+  assert.equal((await call(asaas(fatura))).status, 401);
+  assert.equal((await call(asaas(fatura), { 'asaas-access-token': 'errado' })).status, 401);
+});
+
+test('Asaas: PAYMENT_RECEIVED com token certo liquida pela externalReference', async () => {
+  const { call, fatura, db } = await setup({ webhookToken: 'segredo' });
+  const r = await call(asaas(fatura), TOKEN);
+  assert.equal(r.status, 200);
+  assert.equal(r.body.resultado, 'liquidada');
+  assert.equal(r.body.asaas_payment_id, 'pay_123');
+  const { rows: [f] } = await db.query(`select status, valor_pago::float as v from faturas where id = $1`, [fatura.id]);
+  assert.equal(f.status, 'pago');
+  assert.equal(f.v, fatura.valor);
+});
+
+test('Asaas: reenvio é idempotente e PAYMENT_CONFIRMED também conta como pago', async () => {
+  const { call, fatura } = await setup({ webhookToken: 'segredo' });
+  const primeiro = await call(asaas(fatura, { event: 'PAYMENT_CONFIRMED' }), TOKEN);
+  const segundo = await call(asaas(fatura), TOKEN);
+  assert.equal(primeiro.body.resultado, 'liquidada');
+  assert.equal(segundo.status, 200);
+  assert.equal(segundo.body.resultado, 'ja_processada');
+  assert.equal(segundo.body.pago_em, primeiro.body.pago_em);
+});
+
+test('Asaas: recusa definitiva responde 200 (sem reenvio) e não liquida', async () => {
+  const { call, fatura, db } = await setup({ webhookToken: 'segredo' });
+  const r = await call(asaas(fatura, { value: fatura.valor - 10 }), TOKEN);
+  assert.equal(r.status, 200);
+  assert.equal(r.body.resultado, 'valor_divergente');
+  const { rows: [f] } = await db.query(`select status from faturas where id = $1`, [fatura.id]);
+  assert.equal(f.status, 'pendente');
+});
+
+test('Asaas: outros eventos são ignorados e payload sem externalReference é 400', async () => {
+  const { call, fatura } = await setup({ webhookToken: 'segredo' });
+  const criado = await call(asaas(fatura, { event: 'PAYMENT_CREATED' }), TOKEN);
+  assert.equal(criado.status, 200);
+  assert.equal(criado.body.resultado, 'ignorado');
+
+  const semRef = asaas(fatura);
+  delete semRef.payment.externalReference;
+  const r = await call(semRef, TOKEN);
+  assert.equal(r.status, 400);
+  assert.match(r.body.erro, /externalReference/);
 });
