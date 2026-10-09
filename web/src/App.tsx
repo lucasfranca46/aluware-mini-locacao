@@ -52,30 +52,43 @@ export default function App() {
           setTimeout(() => setRecemPagas((s) => { const n = new Set(s); n.delete(f.id); return n; }), 2000);
           toast({
             tipo: 'sucesso',
-            titulo: `${f.codigo} liquidada`,
+            titulo: `${f.codigo} paga`,
             descricao: `${formatBRL(f.valor)} recebido via Pix em ${formatDataHoraBRT(r.pago_em!)} (Brasília).`,
+            tecnico: `Webhook PAYMENT_RECEIVED · HTTP ${r.httpStatus} · liquidada`,
           });
           carregar();
           break;
         case 'ja_processada':
           toast({
             tipo: 'info',
-            titulo: `Webhook repetido · HTTP ${r.httpStatus}`,
-            descricao: `${f.codigo} já estava paga desde ${formatDataHoraBRT(r.pago_em!)}. Nenhuma alteração feita (idempotente).`,
+            titulo: `${f.codigo} já estava paga`,
+            descricao: `Nenhuma alteração feita. Pago em ${formatDataHoraBRT(r.pago_em!)} (Brasília).`,
+            tecnico: `Webhook reenviado · HTTP ${r.httpStatus} · idempotente`,
           });
           break;
         case 'valor_divergente':
           toast({
             tipo: 'erro',
-            titulo: `Pagamento recusado · HTTP ${r.httpStatus}`,
-            descricao: `Valor recebido ${formatBRL(r.valor_recebido!)} difere do valor da fatura ${formatBRL(r.valor_esperado!)}.`,
+            titulo: 'Pagamento recusado: valor diferente da fatura',
+            descricao: `Recebido ${formatBRL(r.valor_recebido!)}, mas a ${f.codigo} é de ${formatBRL(r.valor_esperado!)}. A fatura continua em aberto.`,
+            tecnico: `Webhook · HTTP ${r.httpStatus} · valor_divergente`,
           });
           break;
         default:
-          toast({ tipo: 'erro', titulo: `Falha no webhook · HTTP ${r.httpStatus}`, descricao: r.erro ?? r.resultado });
+          toast({
+            tipo: 'erro',
+            titulo: 'Não foi possível registrar o pagamento',
+            descricao: 'Tente novamente em instantes.',
+            tecnico: `Webhook · HTTP ${r.httpStatus} · ${r.erro ?? r.resultado}`,
+          });
       }
     } catch (e) {
-      toast({ tipo: 'erro', titulo: 'Erro de rede', descricao: e instanceof Error ? e.message : String(e) });
+      toast({
+        tipo: 'erro',
+        titulo: 'Sem conexão com o servidor',
+        descricao: 'Verifique sua internet e tente novamente.',
+        tecnico: e instanceof Error ? e.message : String(e),
+      });
     } finally {
       setProcessando((s) => { const n = new Set(s); n.delete(f.id); return n; });
     }

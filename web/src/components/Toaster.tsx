@@ -2,7 +2,8 @@ import { createContext, useCallback, useContext, useState, type ReactNode } from
 import { AlertTriangle, CheckCircle2, Info, X } from 'lucide-react';
 
 type Tipo = 'sucesso' | 'info' | 'erro';
-interface Toast { id: number; tipo: Tipo; titulo: string; descricao?: string }
+// `tecnico`: detalhe para o avaliador do teste (ex.: código HTTP). Ver README, "Mensagens técnicas na tela".
+interface Toast { id: number; tipo: Tipo; titulo: string; descricao?: string; tecnico?: string }
 
 const ToastCtx = createContext<(t: Omit<Toast, 'id'>) => void>(() => {});
 export const useToast = () => useContext(ToastCtx);
@@ -50,6 +51,7 @@ export function Toaster({ children }: { children: ReactNode }) {
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-bold">{t.titulo}</p>
                   {t.descricao && <p className="mt-0.5 text-sm text-foreground/70">{t.descricao}</p>}
+                  {t.tecnico && <p className="mt-1.5 font-mono text-[11px] text-foreground/45">{t.tecnico}</p>}
                 </div>
                 <button
                   onClick={() => fechar(t.id)}
