@@ -58,6 +58,9 @@ npm test
 ✔ view deriva status atrasado e seed tem cenários variados
 ✔ veículo não pode ter dois contratos ativos
 ✔ papel anon (chave pública do site) lê a vw_faturas, mas não CPF/e-mail/telefone
+✔ vw_faturas expõe modelo e placa separados (filtros da tela)
+✔ encargos de atraso: multa 2% + juros 1% a.m. pro rata, só para faturas atrasadas
+✔ fatura paga não gera encargos, mesmo vencida
 ✔ PAYMENT_RECEIVED com valor correto liquida (200)
 ✔ reenvio do mesmo webhook (inclusive em paralelo) responde 200 sem duplicar baixa
 ✔ valor divergente -> 422 e fatura continua pendente
@@ -70,7 +73,7 @@ npm test
 ✔ Asaas: reenvio é idempotente e PAYMENT_CONFIRMED também conta como pago
 ✔ Asaas: recusa definitiva responde 200 (sem reenvio) e não liquida
 ✔ Asaas: outros eventos são ignorados e payload sem externalReference é 400
-ℹ tests 24 · pass 24 · fail 0
+ℹ tests 27 · pass 27 · fail 0
 ```
 
 ### 3. Stack completa com Supabase
@@ -192,6 +195,20 @@ A lógica HTTP fica em `handler.ts`, sem dependências de runtime, e por isso os
 - **Feedback imediato**: a linha atualiza na hora (badge animado, destaque verde e horário da baixa), aparece um toast com o horário em Brasília, e a lista é recarregada em seguida para confirmar o estado do servidor.
 - Botões de teste: **Simular pagamento**, **Reenviar webhook** (demonstra a idempotência) e **⊘** (simula Pix com valor divergente).
 
+### Gestão de atraso
+
+Faturas atrasadas são o problema real de uma locadora, então a tela vai além do badge "Atrasado":
+
+- **Dias em atraso** em cada fatura ("há 14 dias").
+- **Encargos calculados no banco** (migration [`20261009000300_encargos_atraso.sql`](supabase/migrations/20261009000300_encargos_atraso.sql)): multa de **2%** + juros de mora de **1% ao mês** *pro rata die*. A `vw_faturas` entrega `dias_atraso`, `multa`, `juros` e `valor_atualizado`, e o card "Em atraso" mostra o total com encargos. Os valores ficam na view, como o status `atrasado`, porque mudam todo dia e assim não precisam de job.
+- **Os encargos são informativos.** O enunciado exige que o valor pago coincida com o valor da fatura, então a liquidação continua exigindo o **valor original**. Num cenário real, a cobrança Pix seria reemitida com o valor atualizado.
+- **Cobrar no WhatsApp:** botão com mensagem pronta (nome, parcela, moto, placa, vencimento, dias em atraso e valor atualizado). O link `wa.me` abre o WhatsApp para escolher o contato, então o telefone do cliente não precisa sair do banco.
+- **Selo "Inadimplente":** cliente com 2 ou mais parcelas atrasadas. A dica sugere avaliar o bloqueio da moto pelo rastreador, prática comum no setor.
+
+### Filtros
+
+Campos separados para **cliente**, **placa** e **veículo** (modelo). Cliente e placa sugerem valores cadastrados, a placa ignora hífen e maiúsculas/minúsculas, e os cards de resumo acompanham os filtros.
+
 ### Mensagens técnicas na tela (decisão consciente)
 
 As notificações mostram uma linha pequena com detalhes técnicos, como `Webhook reenviado · HTTP 200 · idempotente` ou `HTTP 422 · valor_divergente`.
@@ -208,7 +225,9 @@ Como este projeto é um **teste técnico**, deixamos esses detalhes visíveis de
 ├── supabase/
 │   ├── migrations/
 │   │   ├── 20261009000000_mini_locacao.sql              # tabelas, triggers, constraints, função, view, RLS
-│   │   └── 20261009000100_restringir_leitura_publica.sql # anon só lê as colunas da tela
+│   │   ├── 20261009000100_restringir_leitura_publica.sql # anon só lê as colunas da tela
+│   │   ├── 20261009000200_vw_faturas_modelo_placa.sql    # colunas para os filtros
+│   │   └── 20261009000300_encargos_atraso.sql            # dias em atraso, multa, juros
 │   ├── seed.sql                                     # 3 clientes, 3 motos, 3 contratos ativos
 │   ├── config.toml
 │   └── functions/webhook-pagamento/

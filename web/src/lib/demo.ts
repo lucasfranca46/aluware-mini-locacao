@@ -2,8 +2,9 @@
 // para a tela funcionar sem um projeto Supabase configurado.
 import type { Fatura, RespostaWebhook } from './types';
 import { hojeBRT } from './format';
+import { calcularEncargos, diasEntre } from './encargos';
 
-interface FaturaDemo extends Omit<Fatura, 'status'> {
+interface FaturaDemo extends Omit<Fatura, 'status' | 'dias_atraso' | 'multa' | 'juros' | 'valor_atualizado'> {
   status: 'pendente' | 'pago';
 }
 
@@ -47,7 +48,10 @@ export async function listarFaturas(): Promise<Fatura[]> {
   await latencia();
   const hoje = hojeBRT();
   return faturas
-    .map((f) => ({ ...f, status: f.status === 'pendente' && f.vencimento < hoje ? 'atrasado' : f.status }) as Fatura)
+    .map((f): Fatura => {
+      const dias = f.status === 'pendente' ? Math.max(0, diasEntre(f.vencimento, hoje)) : 0;
+      return { ...f, status: dias > 0 ? 'atrasado' : f.status, dias_atraso: dias, ...calcularEncargos(f.valor, dias) };
+    })
     .sort((a, b) => a.vencimento.localeCompare(b.vencimento) || a.codigo.localeCompare(b.codigo));
 }
 

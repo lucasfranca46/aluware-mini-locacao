@@ -6,6 +6,7 @@ import type { Fatura, StatusFatura } from '@/lib/types';
 import { StatusBadge } from '@/components/StatusBadge';
 import { AcoesFatura } from '@/components/AcoesFatura';
 import { useToast } from '@/components/Toaster';
+import { clientesInadimplentes, SeloInadimplente, textoDiasAtraso, ValorComEncargos } from '@/components/Atraso';
 import { aplicarFiltros, FILTROS_VAZIOS, FiltrosFaturas, temFiltro, type Filtros } from '@/components/FiltrosFaturas';
 
 type Filtro = 'todas' | StatusFatura;
@@ -100,12 +101,14 @@ export default function App() {
   // o filtro de status (abas) afeta só a lista.
   const filtradas = useMemo(() => aplicarFiltros(faturas, filtros), [faturas, filtros]);
 
+  const inadimplentes = useMemo(() => clientesInadimplentes(faturas), [faturas]);
+
   const resumo = useMemo(() => {
     const soma = (st: StatusFatura) => filtradas.filter((f) => f.status === st);
-    const total = (fs: Fatura[]) => fs.reduce((acc, f) => acc + f.valor, 0);
+    const total = (fs: Fatura[], campo: 'valor' | 'valor_atualizado' = 'valor') => fs.reduce((acc, f) => acc + f[campo], 0);
     return {
       pendente: { qtd: soma('pendente').length, valor: total(soma('pendente')) },
-      atrasado: { qtd: soma('atrasado').length, valor: total(soma('atrasado')) },
+      atrasado: { qtd: soma('atrasado').length, valor: total(soma('atrasado')), atualizado: total(soma('atrasado'), 'valor_atualizado') },
       pago: { qtd: soma('pago').length, valor: total(soma('pago')) },
     };
   }, [filtradas]);
@@ -160,7 +163,14 @@ export default function App() {
         {/* Resumo */}
         <section className="grid gap-4 sm:grid-cols-3">
           <CardResumo Icon={Clock} titulo="A vencer" qtd={resumo.pendente.qtd} valor={resumo.pendente.valor} tom="primary" />
-          <CardResumo Icon={AlertCircle} titulo="Em atraso" qtd={resumo.atrasado.qtd} valor={resumo.atrasado.valor} tom="destructive" />
+          <CardResumo
+            Icon={AlertCircle}
+            titulo="Em atraso"
+            qtd={resumo.atrasado.qtd}
+            valor={resumo.atrasado.valor}
+            tom="destructive"
+            extra={resumo.atrasado.qtd > 0 ? `${formatBRL(resumo.atrasado.atualizado)} com multa e juros` : undefined}
+          />
           <CardResumo Icon={CheckCircle2} titulo="Recebido" qtd={resumo.pago.qtd} valor={resumo.pago.valor} tom="success" />
         </section>
 
@@ -230,14 +240,18 @@ export default function App() {
                         <p className="text-xs text-foreground/50">Parcela {f.parcela}/{f.total_parcelas}</p>
                       </td>
                       <td className="px-4 py-4">
-                        <p className="font-semibold">{f.cliente}</p>
+                        <p className="flex flex-wrap items-center gap-1.5 font-semibold">
+                          {f.cliente}
+                          {inadimplentes.has(f.cliente) && <SeloInadimplente />}
+                        </p>
                         <p className="text-xs text-foreground/50">{f.veiculo}</p>
                       </td>
                       <td className="px-4 py-4 tabular-nums">{formatData(f.vencimento)}</td>
-                      <td className="px-4 py-4 text-right font-semibold tabular-nums">{formatBRL(f.valor)}</td>
+                      <td className="px-4 py-4 text-right font-semibold tabular-nums"><ValorComEncargos fatura={f} /></td>
                       <td className="px-4 py-4">
                         <StatusBadge status={f.status} animar={recemPagas.has(f.id)} />
                         {f.pago_em && <p className="mt-1 text-xs text-foreground/50 tabular-nums">{formatDataHoraBRT(f.pago_em)}</p>}
+                        {f.dias_atraso > 0 && <p className="mt-1 text-xs font-semibold text-destructive">{textoDiasAtraso(f.dias_atraso)}</p>}
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex justify-end">
@@ -258,13 +272,19 @@ export default function App() {
                         <p className="font-mono text-sm font-semibold">
                           {f.codigo} <span className="font-sans text-xs font-normal text-foreground/50">· {f.parcela}/{f.total_parcelas}</span>
                         </p>
-                        <p className="truncate font-semibold">{f.cliente}</p>
+                        <p className="flex flex-wrap items-center gap-1.5 font-semibold">
+                          <span className="truncate">{f.cliente}</span>
+                          {inadimplentes.has(f.cliente) && <SeloInadimplente />}
+                        </p>
                       </div>
                       <StatusBadge status={f.status} animar={recemPagas.has(f.id)} />
                     </div>
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-foreground/60">Vence {formatData(f.vencimento)}</span>
-                      <span className="font-bold tabular-nums">{formatBRL(f.valor)}</span>
+                      <span className="text-foreground/60">
+                        Vence {formatData(f.vencimento)}
+                        {f.dias_atraso > 0 && <span className="font-semibold text-destructive"> · {textoDiasAtraso(f.dias_atraso)}</span>}
+                      </span>
+                      <span className="font-bold tabular-nums"><ValorComEncargos fatura={f} /></span>
                     </div>
                     {f.pago_em && <p className="text-xs text-foreground/50">Pago em {formatDataHoraBRT(f.pago_em)} (Brasília)</p>}
                     <AcoesFatura fatura={f} carregando={processando.has(f.id)} onSimular={simular} />
@@ -277,6 +297,7 @@ export default function App() {
 
         <p className="text-center text-xs text-foreground/50">
           Horários exibidos no fuso America/Sao_Paulo. O botão <CircleSlash className="inline h-3.5 w-3.5 -translate-y-px" /> simula um Pix com valor divergente.
+          Encargos de atraso (multa 2% + juros 1% a.m.) são informativos: a baixa exige o valor original da fatura.
         </p>
       </main>
     </div>
@@ -289,8 +310,8 @@ const tons = {
   success: { icone: 'bg-success/10 text-success', valor: 'text-success' },
 };
 
-function CardResumo({ Icon, titulo, qtd, valor, tom }: {
-  Icon: typeof Clock; titulo: string; qtd: number; valor: number; tom: keyof typeof tons;
+function CardResumo({ Icon, titulo, qtd, valor, tom, extra }: {
+  Icon: typeof Clock; titulo: string; qtd: number; valor: number; tom: keyof typeof tons; extra?: string;
 }) {
   return (
     <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-elegant transition-all hover:-translate-y-0.5">
@@ -301,7 +322,10 @@ function CardResumo({ Icon, titulo, qtd, valor, tom }: {
         </div>
       </div>
       <p className={`mt-3 text-2xl font-extrabold tabular-nums ${tons[tom].valor}`}>{formatBRL(valor)}</p>
-      <p className="text-xs text-foreground/50">{qtd} {qtd === 1 ? 'fatura' : 'faturas'}</p>
+      <p className="text-xs text-foreground/50">
+        {qtd} {qtd === 1 ? 'fatura' : 'faturas'}
+        {extra && <span className="font-semibold text-destructive"> · {extra}</span>}
+      </p>
     </div>
   );
 }

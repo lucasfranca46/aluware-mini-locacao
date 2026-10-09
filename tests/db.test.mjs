@@ -188,3 +188,26 @@ test('vw_faturas expõe modelo e placa separados (filtros da tela)', async () =>
   assert.equal(rows[0].modelo, 'Dafra DK 160');
   assert.equal(rows[0].veiculo, 'Dafra DK 160 · FAB1C23');
 });
+
+test('encargos de atraso: multa 2% + juros 1% a.m. pro rata, só para faturas atrasadas', async () => {
+  const db = await novoBanco();
+  // Seed: contrato do Carlos (R$ 400) começou há 21 dias -> parcela 1 venceu há 14 dias, parcela 2 há 7.
+  const { rows } = await db.query(`
+    select parcela, status, dias_atraso, multa::float, juros::float, valor_atualizado::float
+      from vw_faturas where placa = 'FAB1C23' order by parcela`);
+
+  assert.deepEqual(rows[0], { parcela: 1, status: 'atrasado', dias_atraso: 14, multa: 8, juros: 1.87, valor_atualizado: 409.87 });
+  assert.deepEqual(rows[1], { parcela: 2, status: 'atrasado', dias_atraso: 7, multa: 8, juros: 0.93, valor_atualizado: 408.93 });
+  for (const r of rows.slice(2)) {
+    assert.equal(r.dias_atraso, 0);
+    assert.equal(r.valor_atualizado, 400);
+  }
+});
+
+test('fatura paga não gera encargos, mesmo vencida', async () => {
+  const db = await novoBanco();
+  const { rows: [f] } = await db.query(`select id from vw_faturas where placa = 'FAB1C23' and parcela = 1`);
+  await db.query(`select liquidar_fatura($1, 400)`, [f.id]);
+  const { rows: [r] } = await db.query(`select status, dias_atraso, multa::float, juros::float from vw_faturas where id = $1`, [f.id]);
+  assert.deepEqual(r, { status: 'pago', dias_atraso: 0, multa: 0, juros: 0 });
+});

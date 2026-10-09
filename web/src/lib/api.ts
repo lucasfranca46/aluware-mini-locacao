@@ -14,11 +14,17 @@ export async function listarFaturas(): Promise<Fatura[]> {
 
   const { data, error } = await supabase
     .from('vw_faturas')
-    .select('id, codigo, parcela, total_parcelas, cliente, veiculo, modelo, placa, vencimento, valor, status, pago_em')
+    .select('id, codigo, parcela, total_parcelas, cliente, veiculo, modelo, placa, vencimento, valor, status, pago_em, dias_atraso, multa, juros, valor_atualizado')
     .order('vencimento')
     .order('codigo');
   if (error) throw error;
-  return data.map((f) => ({ ...f, valor: Number(f.valor) })) as Fatura[];
+  return data.map((f) => ({
+    ...f,
+    valor: Number(f.valor),
+    multa: Number(f.multa),
+    juros: Number(f.juros),
+    valor_atualizado: Number(f.valor_atualizado),
+  })) as Fatura[];
 }
 
 /** Simula o gateway (Asaas) chamando nosso webhook. */
